@@ -1,0 +1,19 @@
+services:
+  fitsheet:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fitsheet
+    restart: unless-stopped
+    environment:
+      TZ: America/Chicago
+      DATA_DIR: /app/data
+      PORT: "3000"
+      # Optional: enables AI nutrition-label reading. Put it in a .env next to this file
+      # (ANTHROPIC_API_KEY=sk-...) or export it before `docker compose up`.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "3000:3000"
+    volumes:
+      # DB + uploaded photos. This single folder is the whole backup.
+      - ./server/data:/app/data

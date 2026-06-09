@@ -1,0 +1,28 @@
+# Portainer stack for fitsheet. Paste this into Portainer → Stacks → Add stack (Web editor).
+# The image is built + published by GitHub Actions to ghcr.io/gemivnet/fitsheet.
+#
+# If the GHCR package is private, either:
+#   - GitHub → your profile → Packages → fitsheet → Package settings → Change visibility → Public, OR
+#   - add your GHCR registry credentials in Portainer (Registries) and select it on the stack.
+#
+# Front this with HTTPS in Nginx Proxy Manager (proxy host → fitsheet:3000). HTTPS is required for
+# the in-browser camera (barcode scanning + label photos).
+
+services:
+  fitsheet:
+    image: ghcr.io/gemivnet/fitsheet:latest
+    container_name: fitsheet
+    restart: unless-stopped
+    environment:
+      TZ: America/Chicago
+      # Optional: enables AI nutrition-label reading. Leave blank to disable (label capture then
+      # falls back to manual entry). Set it in Portainer's stack environment variables.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - '3000:3000'
+    volumes:
+      # The whole app state (SQLite DB + uploaded photos). Back this up.
+      - fitsheet-data:/app/data
+
+volumes:
+  fitsheet-data:

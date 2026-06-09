@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# expo / metro / build output
+.expo/
+**/.expo/
+dist/
+web-build/
+*.tsbuildinfo
+
+# secrets & local config (never commit — see CLAUDE.md PII rules)
+.env
+.env.*
+!.env.example
+**/.env
+!**/.env.example
+
+# server runtime data (DB + uploads + progress photos = PII)
+server/data/
+server/config.yaml
+
+# design-tool handoff (chats may contain PII — reference only, never commit)
+design-handoff/
+
+# misc
+*.log
+.DS_Store
+*.orig
