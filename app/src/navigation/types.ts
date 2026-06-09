@@ -18,6 +18,7 @@ export type MoreStackParams = {
   MoreHub: undefined;
   Notes: undefined;
   Recipes: undefined;
+  MealPlan: undefined;
   Analytics: undefined;
   Settings: undefined;
 };

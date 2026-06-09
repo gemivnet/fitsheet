@@ -20,6 +20,7 @@ export function RecipesScreen() {
   useFocusEffect(useCallback(() => void recipes.refetch(), [recipes.refetch]));
   const [open, setOpen] = useState(false);
   const remove = useMutation({ mutationFn: (id: number) => api.recipes.remove(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['recipes'] }) });
+  const fav = useMutation({ mutationFn: (id: number) => api.recipes.favorite(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['recipes'] }) });
 
   const tags = (r: Recipe): string[] => {
     try {
@@ -56,6 +57,13 @@ export function RecipesScreen() {
                   ) : (
                     <Icon name="food" size={30} color={t.text3} />
                   )}
+                  <Pressable
+                    onPress={() => fav.mutate(r.id)}
+                    hitSlop={8}
+                    style={{ position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Icon name="star" size={17} color={r.is_favorite ? t.accent : t.text3} fill={r.is_favorite ? t.accent : 'none'} />
+                  </Pressable>
                 </View>
                 <View style={{ padding: 12 }}>
                   <T w={800} size={15} numberOfLines={1}>
@@ -116,6 +124,28 @@ function RecipeForm({ visible, onClose, onSaved }: { visible: boolean; onClose: 
   const [tags, setTags] = useState('');
   const [ingredients, setIngredients] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [paste, setPaste] = useState('');
+  const [parsing, setParsing] = useState(false);
+
+  async function autofill() {
+    if (!paste.trim()) return;
+    setParsing(true);
+    try {
+      const { recipe } = await api.ai.parseRecipe(paste);
+      if (recipe) {
+        if (recipe.name) setName(recipe.name);
+        if (recipe.approx_kcal != null) setKcal(String(recipe.approx_kcal));
+        if (recipe.cook_band) setBand(recipe.cook_band);
+        if (recipe.tags?.length) setTags(recipe.tags.join(', '));
+        const ing = [recipe.ingredients, recipe.steps ? `Steps:\n${recipe.steps}` : ''].filter(Boolean).join('\n\n');
+        if (ing) setIngredients(ing);
+      }
+    } catch {
+      /* ignore — she can fill manually */
+    } finally {
+      setParsing(false);
+    }
+  }
 
   const pickPhoto = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
@@ -143,6 +173,12 @@ function RecipeForm({ visible, onClose, onSaved }: { visible: boolean; onClose: 
 
   return (
     <Sheet visible={visible} onClose={onClose} title="Add recipe">
+      <TextField label="Paste a recipe (optional)" value={paste} onChangeText={setPaste} placeholder="Paste ingredients & steps, then auto-fill" multiline />
+      <View style={{ marginBottom: 18 }}>
+        <Button variant="soft" icon="star" full onPress={autofill}>
+          {parsing ? 'Reading…' : 'Auto-fill with AI'}
+        </Button>
+      </View>
       <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Turkey chili" autoFocus />
       <TextField label="Approx calories" value={kcal} onChangeText={setKcal} keyboardType="numeric" suffix="kcal" />
       <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>

@@ -36,7 +36,7 @@ export function recipesRouter(db: DB): Router {
       where.push("tags_json LIKE ?");
       params.push(`%"${req.query.tag}"%`);
     }
-    const sql = 'SELECT * FROM recipes' + (where.length ? ` WHERE ${where.join(' AND ')}` : '') + ' ORDER BY updated_at DESC';
+    const sql = 'SELECT * FROM recipes' + (where.length ? ` WHERE ${where.join(' AND ')}` : '') + ' ORDER BY is_favorite DESC, updated_at DESC';
     res.json(db.prepare(sql).all(...params));
   });
 
@@ -86,6 +86,14 @@ export function recipesRouter(db: DB): Router {
       id,
     );
     writeAudit(db, { entity: 'recipe', entityId: id, action: 'update' });
+    res.json(db.prepare('SELECT * FROM recipes WHERE id = ?').get(id));
+  });
+
+  r.post('/:id/favorite', (req, res) => {
+    const id = Number(req.params.id);
+    const row = db.prepare('SELECT is_favorite FROM recipes WHERE id = ?').get(id) as { is_favorite: number } | undefined;
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    db.prepare('UPDATE recipes SET is_favorite = ?, updated_at = ? WHERE id = ?').run(row.is_favorite ? 0 : 1, nowIso(), id);
     res.json(db.prepare('SELECT * FROM recipes WHERE id = ?').get(id));
   });
 

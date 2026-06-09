@@ -37,7 +37,7 @@ export function buildServer(db: DB) {
   app.use('/api/notes', notesRouter(db));
   app.use('/api/recipes', recipesRouter(db));
   app.use('/api/analytics', analyticsRouter(db));
-  app.use('/api/ai', aiRouter());
+  app.use('/api/ai', aiRouter(db));
   app.use('/api/openfoodfacts', offRouter());
   app.use('/api/dashboard', dashboardRouter(db));
   app.use('/api/dev', devRouter(db));

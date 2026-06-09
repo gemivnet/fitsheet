@@ -173,6 +173,27 @@ export interface Recipe {
   ingredients: string | null;
   steps: string | null;
   tags_json: string;
+  is_favorite: number;
+}
+
+export interface ParsedFood {
+  name: string;
+  grams: number;
+  kcal: number;
+  protein_g: number;
+  carb_g: number;
+  fat_g: number;
+}
+export interface ParsedRecipe {
+  name: string | null;
+  approx_kcal: number | null;
+  cook_band: 'under_30' | '30_60' | 'over_60' | null;
+  tags: string[];
+  ingredients: string | null;
+  steps: string | null;
+}
+export interface MealPlan {
+  days: { label: string; meals: { slot: string; name: string; kcal: number }[]; total: number }[];
 }
 
 export interface Dashboard {
@@ -291,6 +312,7 @@ export const api = {
     },
     get: (id: number) => req<Recipe>('GET', `/api/recipes/${id}`),
     create: (form: FormData) => req<Recipe>('POST', '/api/recipes', form),
+    favorite: (id: number) => req<Recipe>('POST', `/api/recipes/${id}/favorite`),
     remove: (id: number) => req('DELETE', `/api/recipes/${id}`),
   },
 
@@ -299,6 +321,11 @@ export const api = {
   ai: {
     extractLabel: (form: FormData) =>
       req<{ nutrition: any; label_photo: string; confidence?: string; error?: string }>('POST', '/api/ai/extract-label', form),
+    parseFood: (text: string) => req<{ items: ParsedFood[] }>('POST', '/api/ai/parse-food', { text }),
+    parseRecipe: (text: string) => req<{ recipe: ParsedRecipe | null; error?: string }>('POST', '/api/ai/parse-recipe', { text }),
+    checkin: () => req<{ note: string | null }>('GET', '/api/ai/checkin'),
+    refreshCheckin: () => req<{ note: string | null }>('POST', '/api/ai/checkin/refresh'),
+    mealPlan: (days: number) => req<{ plan: MealPlan | null }>('POST', '/api/ai/meal-plan', { days }),
   },
 
   dev: {

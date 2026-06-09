@@ -103,6 +103,8 @@ export function HomeScreen() {
           </View>
         </View>
 
+        <CheckinCard />
+
         {/* today's calories */}
         <Card pad={24} style={{ marginBottom: 16 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
@@ -277,6 +279,24 @@ export function HomeScreen() {
         />
       ) : null}
     </View>
+  );
+}
+
+function CheckinCard() {
+  const t = useTheme();
+  const c = useQuery({ queryKey: ['checkin'], queryFn: api.ai.checkin, staleTime: 60 * 60 * 1000 });
+  if (!c.data?.note) return null;
+  return (
+    <Card pad={18} style={{ marginBottom: 16, backgroundColor: t.accentSofter }}>
+      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+        <View style={{ width: 30, height: 30, borderRadius: 999, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="star" size={16} color="#fff" fill="#fff" />
+        </View>
+        <T w={700} size={15} style={{ flex: 1, lineHeight: 22 }}>
+          {c.data.note}
+        </T>
+      </View>
+    </Card>
   );
 }
 

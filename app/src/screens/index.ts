@@ -11,4 +11,5 @@ export { MoreHubScreen } from './MoreHubScreen';
 export { NotesScreen } from './NotesScreen';
 export { RecipesScreen } from './RecipesScreen';
 export { AnalyticsScreen } from './AnalyticsScreen';
+export { MealPlanScreen } from './MealPlanScreen';
 export { SettingsScreen } from './SettingsScreen';

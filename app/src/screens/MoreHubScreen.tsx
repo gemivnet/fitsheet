@@ -11,6 +11,7 @@ import type { MoreStackParams } from '../navigation/types';
 
 const ITEMS: { icon: IconName; label: string; sub: string; route: keyof MoreStackParams }[] = [
   { icon: 'food', label: 'Recipes', sub: 'Low-cal ideas, cook times', route: 'Recipes' },
+  { icon: 'flame', label: 'Meal plan', sub: 'AI plan that fits your goal', route: 'MealPlan' },
   { icon: 'edit', label: 'Notes & journal', sub: 'How you’re feeling', route: 'Notes' },
   { icon: 'trend', label: 'Analytics', sub: 'Trend, TDEE, projections', route: 'Analytics' },
   { icon: 'gear', label: 'Settings', sub: 'Goals, units, reminders', route: 'Settings' },
