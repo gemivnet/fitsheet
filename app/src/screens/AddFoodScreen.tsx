@@ -16,6 +16,8 @@ interface Picked {
   name: string;
   brand?: string | null;
   serving_g?: number | null;
+  barcode?: string | null;
+  off_id?: string | null;
   kcal_100g: number;
   protein_100g: number;
   carb_100g: number;
@@ -32,21 +34,46 @@ export function AddFoodScreen({ navigation, route }: Props) {
   const [picked, setPicked] = useState<Picked | null>(null);
 
   const add = useMutation({
-    mutationFn: (p: { grams: number; food: Picked }) =>
-      api.foodLog.add({
+    mutationFn: async (p: { grams: number; food: Picked }) => {
+      let foodId = p.food.food_id ?? null;
+      // Save barcoded (scanned / searched) foods to the library so they're re-addable later.
+      // Dedupe by barcode so re-scanning the same product never makes a duplicate.
+      if (foodId == null && p.food.barcode) {
+        const existing = await api.foods.barcodeLocal(p.food.barcode).catch(() => null);
+        if (existing) {
+          foodId = existing.id;
+        } else {
+          const created = await api.foods.create({
+            name: p.food.name,
+            brand: p.food.brand ?? null,
+            barcode: p.food.barcode,
+            off_id: p.food.off_id ?? null,
+            source: 'off',
+            serving_g: p.food.serving_g ?? null,
+            kcal_100g: p.food.kcal_100g,
+            protein_100g: p.food.protein_100g,
+            carb_100g: p.food.carb_100g,
+            fat_100g: p.food.fat_100g,
+          } as any);
+          foodId = created.id;
+        }
+      }
+      return api.foodLog.add({
         date,
         meal_slot: slot,
-        food_id: p.food.food_id ?? null,
+        food_id: foodId,
         name: p.food.name,
         grams: p.grams,
         kcal_100g: p.food.kcal_100g,
         protein_100g: p.food.protein_100g,
         carb_100g: p.food.carb_100g,
         fat_100g: p.food.fat_100g,
-      }),
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['foodlog', date] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
+      qc.invalidateQueries({ queryKey: ['foods'] });
       setPicked(null);
       navigation.goBack();
     },
@@ -66,13 +93,13 @@ export function AddFoodScreen({ navigation, route }: Props) {
       </View>
 
       <View style={{ marginBottom: 16 }}>
-        <SegmentedControl options={['Describe', 'Search', 'Scan', 'Favorites']} value={tab} onChange={setTab} />
+        <SegmentedControl options={['Describe', 'Search', 'Scan', 'My foods']} value={tab} onChange={setTab} />
       </View>
 
       {tab === 'Describe' ? <DescribeTab slot={slot} date={date} onDone={() => navigation.goBack()} /> : null}
       {tab === 'Search' ? <SearchTab onPick={setPicked} /> : null}
       {tab === 'Scan' ? <ScanTab onPick={setPicked} /> : null}
-      {tab === 'Favorites' ? <FavoritesTab onPick={setPicked} /> : null}
+      {tab === 'My foods' ? <FavoritesTab onPick={setPicked} /> : null}
 
       <View style={{ alignItems: 'center', paddingVertical: 16, gap: 10 }}>
         <Button variant="ghost" icon="plus" onPress={() => navigation.navigate('LabelCapture', { slot, date })}>
@@ -89,10 +116,10 @@ export function AddFoodScreen({ navigation, route }: Props) {
 }
 
 function offToPicked(o: OffFood): Picked {
-  return { name: o.name, brand: o.brand, serving_g: o.serving_g, kcal_100g: o.kcal_100g, protein_100g: o.protein_100g, carb_100g: o.carb_100g, fat_100g: o.fat_100g };
+  return { name: o.name, brand: o.brand, serving_g: o.serving_g, barcode: o.barcode, off_id: o.off_id, kcal_100g: o.kcal_100g, protein_100g: o.protein_100g, carb_100g: o.carb_100g, fat_100g: o.fat_100g };
 }
 function foodToPicked(f: Food): Picked {
-  return { food_id: f.id, name: f.name, brand: f.brand, serving_g: f.serving_g, kcal_100g: f.kcal_100g, protein_100g: f.protein_100g, carb_100g: f.carb_100g, fat_100g: f.fat_100g };
+  return { food_id: f.id, name: f.name, brand: f.brand, serving_g: f.serving_g, barcode: f.barcode, kcal_100g: f.kcal_100g, protein_100g: f.protein_100g, carb_100g: f.carb_100g, fat_100g: f.fat_100g };
 }
 
 function ResultRow({ name, brand, kcal100, onPress }: { name: string; brand?: string | null; kcal100: number; onPress: () => void }) {
