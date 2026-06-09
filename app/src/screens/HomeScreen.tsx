@@ -84,6 +84,10 @@ export function HomeScreen() {
   const remaining = banking ? today.adjusted_remaining : today.remaining;
   const over = today.totals.kcal > target;
   const goal = d.weight.goal;
+  const SLOT_LABELS: Record<string, string> = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snacks: 'Snacks' };
+  const eatenItems = (['breakfast', 'lunch', 'dinner', 'snacks'] as const).flatMap((sl) =>
+    (today.slots?.[sl] ?? []).map((it) => ({ ...it, slotLabel: SLOT_LABELS[sl] })),
+  );
 
   return (
     <View style={{ flex: 1 }}>
@@ -141,6 +145,43 @@ export function HomeScreen() {
               </T>
             </View>
           ) : null}
+        </Card>
+
+        {/* today's food — the diary, surfaced where she looks first */}
+        <Card pad={20} style={{ marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: eatenItems.length ? 8 : 0 }}>
+            <SectionLabel>Today&rsquo;s food</SectionLabel>
+            <Pressable onPress={() => nav.navigate('Food')} hitSlop={8}>
+              <T w={800} size={13} color={t.accentPress}>
+                View day →
+              </T>
+            </Pressable>
+          </View>
+          {eatenItems.length === 0 ? (
+            <T w={600} size={14} color={t.text3} style={{ paddingTop: 6 }}>
+              Nothing logged yet — use Search or Describe below.
+            </T>
+          ) : (
+            eatenItems.map((it, i) => (
+              <Pressable
+                key={it.id}
+                onPress={() => nav.navigate('Food')}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 9, borderBottomWidth: i === eatenItems.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}
+              >
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <T w={700} size={15} numberOfLines={1}>
+                    {it.name}
+                  </T>
+                  <T w={700} size={12} color={t.text3}>
+                    {it.slotLabel} · {Math.round(it.grams)} g
+                  </T>
+                </View>
+                <T num w={800} size={15}>
+                  {Math.round(it.kcal)}
+                </T>
+              </Pressable>
+            ))
+          )}
         </Card>
 
         {/* quick add (favorites) */}
