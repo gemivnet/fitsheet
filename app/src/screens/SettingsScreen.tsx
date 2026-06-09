@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, Switch, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Icon, Screen, SectionLabel, SegmentedControl, T, TextField } from '../components';
+import { Button, CalorieCalculator, Card, Icon, Screen, SectionLabel, SegmentedControl, T, TextField } from '../components';
 import { api, type Settings } from '../lib/api';
 import { confirmAction, notify } from '../lib/dialog';
 import { fromDisplayWeight, toDisplayWeight, type Units } from '../lib/units';
@@ -26,6 +26,8 @@ export function SettingsScreen() {
   const [weekday, setWeekday] = useState(0);
   const [hour, setHour] = useState('9');
   const [workoutReminders, setWorkoutReminders] = useState(true);
+  const [banking, setBanking] = useState(true);
+  const [calcOpen, setCalcOpen] = useState(false);
 
   useEffect(() => {
     const s = settings.data;
@@ -38,6 +40,7 @@ export function SettingsScreen() {
     setWeekday(s.weigh_in_weekday);
     setHour(String(s.weigh_in_hour));
     setWorkoutReminders(s.workout_reminders);
+    setBanking(s.weekly_banking);
   }, [settings.data]);
 
   async function save() {
@@ -50,6 +53,7 @@ export function SettingsScreen() {
       weigh_in_weekday: weekday,
       weigh_in_hour: Number(hour) || 9,
       workout_reminders: workoutReminders,
+      weekly_banking: banking,
     };
     await api.settings.update(patch);
     qc.invalidateQueries();
@@ -84,6 +88,11 @@ export function SettingsScreen() {
         <SectionLabel style={{ marginBottom: 14 }}>Goals</SectionLabel>
         <TextField label="Your name" value={name} onChangeText={setName} placeholder="What should we call you?" />
         <TextField label="Daily calorie goal" value={goal} onChangeText={setGoal} keyboardType="numeric" suffix="kcal" />
+        <Pressable onPress={() => setCalcOpen(true)} hitSlop={8} style={{ alignSelf: 'flex-end', marginTop: -6, marginBottom: 10 }}>
+          <T w={800} size={13} color={t.accentPress}>
+            Calculate it for me
+          </T>
+        </Pressable>
         <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
           Units
         </T>
@@ -97,6 +106,17 @@ export function SettingsScreen() {
           <View style={{ flex: 1 }}>
             <TextField label="Goal weight" value={target} onChangeText={setTarget} keyboardType="numeric" suffix={units} />
           </View>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <T w={700} size={15} color={t.text2}>
+              Roll over calories (weekly bank)
+            </T>
+            <T w={600} size={12} color={t.text3}>
+              Under one day adds to the next; over trims it.
+            </T>
+          </View>
+          <Switch value={banking} onValueChange={setBanking} trackColor={{ true: t.accent }} />
         </View>
       </Card>
 
@@ -137,6 +157,8 @@ export function SettingsScreen() {
           Erase everything & start over
         </Button>
       </Card>
+
+      <CalorieCalculator visible={calcOpen} onClose={() => setCalcOpen(false)} units={units} currentWeight={start} onUse={(g) => setGoal(String(g))} />
       <View style={{ height: 20 }} />
     </Screen>
   );

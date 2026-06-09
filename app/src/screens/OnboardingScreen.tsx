@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Icon, Screen, SectionLabel, SegmentedControl, T, TextField } from '../components';
+import { Button, CalorieCalculator, Card, Icon, Screen, SectionLabel, SegmentedControl, T, TextField } from '../components';
 import { api } from '../lib/api';
 import { fromDisplayWeight, type Units } from '../lib/units';
 import { useTheme } from '../theme';
@@ -18,6 +18,7 @@ export function OnboardingScreen() {
   const [target, setTarget] = useState('');
   const [goal, setGoal] = useState('1850');
   const [saving, setSaving] = useState(false);
+  const [calcOpen, setCalcOpen] = useState(false);
 
   async function finish(skip = false) {
     setSaving(true);
@@ -78,9 +79,16 @@ export function OnboardingScreen() {
           </View>
         </View>
         <TextField label="Daily calorie goal" value={goal} onChangeText={setGoal} keyboardType="numeric" suffix="kcal" />
-        <T w={600} size={13} color={t.text3} style={{ marginTop: -6 }}>
-          This is yours to set — whatever target you&rsquo;re aiming for.
-        </T>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: -4 }}>
+          <T w={600} size={13} color={t.text3} style={{ flex: 1, paddingRight: 10 }}>
+            This is yours to set — whatever target you&rsquo;re aiming for.
+          </T>
+          <Pressable onPress={() => setCalcOpen(true)} hitSlop={8}>
+            <T w={800} size={13} color={t.accentPress}>
+              Calculate it
+            </T>
+          </Pressable>
+        </View>
       </Card>
 
       <Button full size="lg" icon="check" onPress={() => finish(false)}>
@@ -93,6 +101,8 @@ export function OnboardingScreen() {
           </T>
         </Pressable>
       </View>
+
+      <CalorieCalculator visible={calcOpen} onClose={() => setCalcOpen(false)} units={units} currentWeight={current} onUse={(g) => setGoal(String(g))} />
     </Screen>
   );
 }

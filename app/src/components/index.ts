@@ -21,3 +21,4 @@ export { CelebrationModal, Confetti } from './Celebration';
 export { Screen } from './Screen';
 export { TextField, Sheet } from './forms';
 export { ReminderSync } from './ReminderSync';
+export { CalorieCalculator } from './CalorieCalculator';

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { writeAudit } from '../audit';
 import type { DB } from '../db/index';
 import { getSettings } from '../settings';
-import { nowIso, round, todayStr } from '../util';
+import { addDaysStr, clamp, nowIso, round, todayStr } from '../util';
 
 const SLOTS = ['breakfast', 'lunch', 'dinner', 'snacks'] as const;
 
@@ -21,7 +21,8 @@ interface LogRow {
 }
 
 export function daySummary(db: DB, date: string) {
-  const goal = getSettings(db).daily_calorie_goal;
+  const s = getSettings(db);
+  const goal = s.daily_calorie_goal;
   const rows = db.prepare('SELECT * FROM food_log WHERE day_date = ? ORDER BY meal_slot, sort_order, id').all(date) as LogRow[];
   const slots: Record<string, LogRow[]> = { breakfast: [], lunch: [], dinner: [], snacks: [] };
   const slotKcal: Record<string, number> = { breakfast: 0, lunch: 0, dinner: 0, snacks: 0 };
@@ -35,7 +36,36 @@ export function daySummary(db: DB, date: string) {
     totals.fat += r.fat;
   }
   for (const k of Object.keys(totals) as (keyof typeof totals)[]) totals[k] = round(totals[k], 0);
-  return { date, goal, totals, remaining: Math.round(goal - totals.kcal), slots, slot_kcal: slotKcal };
+
+  // ── weekly calorie banking: roll prior over/under into today's target ──
+  const intakeOn = (d: string): number | null => {
+    const r = db.prepare('SELECT SUM(kcal) AS k FROM food_log WHERE day_date = ?').get(d) as { k: number | null };
+    return r.k == null ? null : r.k;
+  };
+  let bankWeek = 0;
+  for (let i = 1; i <= 6; i++) {
+    const v = intakeOn(addDaysStr(date, -i));
+    if (v != null) bankWeek += goal - v; // under = positive (headroom), over = negative
+  }
+  bankWeek = Math.round(bankWeek);
+  const yIntake = intakeOn(addDaysStr(date, -1));
+  const bankYesterday = yIntake == null ? null : Math.round(goal - yIntake);
+  const adjustment = s.weekly_banking ? clamp(bankWeek, -800, 800) : 0;
+  const adjustedGoal = Math.max(1200, goal + adjustment);
+
+  return {
+    date,
+    goal,
+    totals,
+    remaining: Math.round(goal - totals.kcal),
+    slots,
+    slot_kcal: slotKcal,
+    banking: s.weekly_banking,
+    bank_week: bankWeek,
+    bank_yesterday: bankYesterday,
+    adjusted_goal: adjustedGoal,
+    adjusted_remaining: Math.round(adjustedGoal - totals.kcal),
+  };
 }
 
 export function foodLogRouter(db: DB): Router {

@@ -79,7 +79,10 @@ export function HomeScreen() {
   const d = dash.data;
   const s = d.settings;
   const today = d.today;
-  const over = today.totals.kcal > today.goal;
+  const banking = today.banking;
+  const target = banking ? today.adjusted_goal : today.goal;
+  const remaining = banking ? today.adjusted_remaining : today.remaining;
+  const over = today.totals.kcal > target;
   const goal = d.weight.goal;
 
   return (
@@ -112,13 +115,13 @@ export function HomeScreen() {
             </View>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 26 }}>
-            <CalorieRing consumed={today.totals.kcal} goal={today.goal} size={200} />
+            <CalorieRing consumed={today.totals.kcal} goal={target} size={200} />
             <View style={{ flex: 1, gap: 14 }}>
-              <Stat label="Eaten" value={today.totals.kcal} />
+              <Stat label="Eaten" value={Math.round(today.totals.kcal)} />
               <View style={{ height: 1, backgroundColor: t.hairline }} />
-              <Stat label="Goal" value={today.goal} />
+              <Stat label={banking ? 'Today’s target' : 'Goal'} value={target} />
               <View style={{ height: 1, backgroundColor: t.hairline }} />
-              <Stat label="Left" value={today.remaining} muted />
+              <Stat label="Left" value={remaining} muted />
             </View>
           </View>
           <View style={{ flexDirection: 'row', gap: 16, marginTop: 22 }}>
@@ -126,6 +129,16 @@ export function HomeScreen() {
             <MacroBar label="Carbs" value={Math.round(today.totals.carb)} goal={s.carb_goal_g} varName="carb" />
             <MacroBar label="Fat" value={Math.round(today.totals.fat)} goal={s.fat_goal_g} varName="fat" />
           </View>
+          {banking && today.bank_week !== 0 ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 }}>
+              <Icon name={today.bank_week > 0 ? 'trend' : 'flame'} size={14} stroke={2.4} color={today.bank_week > 0 ? t.success : t.caution} />
+              <T w={700} size={13} color={t.text2}>
+                {today.bank_week > 0
+                  ? `+${today.bank_week} banked this week — folded into today`
+                  : `${Math.abs(today.bank_week)} over this week — trimmed from today`}
+              </T>
+            </View>
+          ) : null}
         </Card>
 
         {/* quick add (favorites) */}

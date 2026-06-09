@@ -19,6 +19,14 @@ export interface Settings {
   milestone_step_lb: number;
   tdee_window_days: number;
   onboarded: boolean;
+  // weekly calorie banking: roll prior over/under into today's target
+  weekly_banking: boolean;
+  // optional inputs for the calorie-goal calculator (Mifflin-St Jeor)
+  sex: 'female' | 'male' | null;
+  age: number | null;
+  height_cm: number | null;
+  activity_factor: number;
+  goal_rate_lb: number; // target loss per week, in lb
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -36,6 +44,12 @@ export const DEFAULT_SETTINGS: Settings = {
   milestone_step_lb: 5,
   tdee_window_days: 21,
   onboarded: false,
+  weekly_banking: true,
+  sex: null,
+  age: null,
+  height_cm: null,
+  activity_factor: 1.375,
+  goal_rate_lb: 1.0,
 };
 
 export function getSettings(db: DB): Settings {

@@ -44,6 +44,12 @@ export interface Settings {
   milestone_step_lb: number;
   tdee_window_days: number;
   onboarded: boolean;
+  weekly_banking: boolean;
+  sex: 'female' | 'male' | null;
+  age: number | null;
+  height_cm: number | null;
+  activity_factor: number;
+  goal_rate_lb: number;
 }
 
 export interface Food {
@@ -93,6 +99,11 @@ export interface DaySummary {
   remaining: number;
   slots: Record<string, LogEntry[]>;
   slot_kcal: Record<string, number>;
+  banking: boolean;
+  bank_week: number;
+  bank_yesterday: number | null;
+  adjusted_goal: number;
+  adjusted_remaining: number;
 }
 
 export interface WeightEntry {

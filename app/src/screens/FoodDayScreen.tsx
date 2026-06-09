@@ -42,6 +42,10 @@ export function FoodDayScreen({ navigation }: Props) {
 
   const openAdd = (slot: string) => navigation.navigate('AddFood', { slot, date });
   const d = day.data;
+  const eaten = d ? Math.round(d.totals.kcal) : 0;
+  const banking = !!d?.banking;
+  const target = d ? (banking ? d.adjusted_goal : d.goal) : 0;
+  const remaining = d ? (banking ? d.adjusted_remaining : d.remaining) : 0;
 
   return (
     <Screen>
@@ -59,22 +63,32 @@ export function FoodDayScreen({ navigation }: Props) {
         <RoundBtn icon="chevR" onPress={() => setDate((x) => addDaysStr(x, 1))} />
       </View>
 
-      {/* total vs goal */}
+      {/* total vs goal (goal adjusts for the weekly bank when banking is on) */}
       <Card pad={20} style={{ marginBottom: 18 }}>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 7 }}>
             <T num w={800} size={34}>
-              {d ? Math.round(d.totals.kcal) : 0}
+              {eaten}
             </T>
             <T w={800} size={15} color={t.text3}>
-              / {d?.goal ?? 0} kcal
+              / {target} kcal
             </T>
           </View>
-          <T num w={800} size={15} color={t.accentPress}>
-            {d ? d.remaining : 0} left
+          <T num w={800} size={15} color={remaining < 0 ? t.caution : t.accentPress}>
+            {remaining} left
           </T>
         </View>
-        <ProgressBar value={d ? d.totals.kcal : 0} max={d?.goal ?? 1} height={14} showOver />
+        <ProgressBar value={eaten} max={target || 1} height={14} showOver />
+        {banking && d && d.bank_week !== 0 ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
+            <Icon name={d.bank_week > 0 ? 'trend' : 'flame'} size={14} stroke={2.4} color={d.bank_week > 0 ? t.success : t.caution} />
+            <T w={700} size={13} color={t.text2}>
+              {d.bank_week > 0
+                ? `+${d.bank_week} banked this week — added to today`
+                : `${Math.abs(d.bank_week)} over this week — trimmed from today`}
+            </T>
+          </View>
+        ) : null}
       </Card>
 
       {SLOTS.map(({ key, label }) => {
