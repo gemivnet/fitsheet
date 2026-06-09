@@ -18,6 +18,8 @@ services:
       # Optional: enables AI nutrition-label reading. Leave blank to disable (label capture then
       # falls back to manual entry). Set it in Portainer's stack environment variables.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # AI model. Defaults to Sonnet; set to claude-opus-4-8 for max quality, claude-haiku-4-5 for cheapest.
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
     ports:
       - '3000:3000'
     volumes:

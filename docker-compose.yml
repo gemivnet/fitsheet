@@ -12,6 +12,7 @@ services:
       # Optional: enables AI nutrition-label reading. Put it in a .env next to this file
       # (ANTHROPIC_API_KEY=sk-...) or export it before `docker compose up`.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
     ports:
       - "3000:3000"
     volumes:
