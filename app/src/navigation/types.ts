@@ -6,6 +6,7 @@ export type FoodStackParams = {
   FoodDay: undefined;
   AddFood: { slot: string; date: string };
   LabelCapture: { slot: string; date: string };
+  DishBuilder: { slot: string; date: string };
 };
 
 export type WeightStackParams = {

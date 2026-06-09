@@ -3,6 +3,7 @@ export { HomeScreen } from './HomeScreen';
 export { FoodDayScreen } from './FoodDayScreen';
 export { AddFoodScreen } from './AddFoodScreen';
 export { LabelCaptureScreen } from './LabelCaptureScreen';
+export { DishBuilderScreen } from './DishBuilderScreen';
 export { WeightScreen } from './WeightScreen';
 export { LogWeightScreen } from './LogWeightScreen';
 export { ActivityScreen } from './ActivityScreen';

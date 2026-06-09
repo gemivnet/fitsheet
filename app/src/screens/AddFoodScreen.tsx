@@ -78,9 +78,12 @@ export function AddFoodScreen({ navigation, route }: Props) {
       {tab === 'Scan' ? <ScanTab onPick={setPicked} /> : null}
       {tab === 'Favorites' ? <FavoritesTab onPick={setPicked} /> : null}
 
-      <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+      <View style={{ alignItems: 'center', paddingVertical: 16, gap: 10 }}>
         <Button variant="ghost" icon="plus" onPress={() => navigation.navigate('LabelCapture', { slot, date })}>
           Add a custom food
+        </Button>
+        <Button variant="ghost" icon="food" onPress={() => navigation.navigate('DishBuilder', { slot, date })}>
+          Build a dish (big meal)
         </Button>
       </View>
 
