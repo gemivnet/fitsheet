@@ -1,17 +1,25 @@
-// AddFoodScreen.tsx — My foods (smart re-add) / Search (Open Food Facts) / Scan (barcode) /
-// Describe (AI). Picking a food opens a grams/servings numpad sheet that logs it to the day.
+// AddFoodScreen.tsx — Find (your foods + Open Food Facts) / Scan / Describe. Picking a food opens
+// an amount sheet (numpad, grams or named pieces). One-tap ＋ re-logs the remembered amount.
+// After logging, the screen STAYS OPEN and the list re-ranks to what you usually log next.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { Animated, Easing, Pressable, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Icon, Screen, SectionLabel, SegmentedControl, Sheet, T, TextField } from '../components';
+import { Button, Card, Chip, Icon, NumberPad, Screen, SectionLabel, SegmentedControl, Sheet, T, TextField, useNumberField } from '../components';
 import { BarcodeScanner } from '../components/BarcodeScanner';
-import { api, type Food, type OffFood } from '../lib/api';
+import { api, type Food, type OffFood, type Suggestion } from '../lib/api';
 import { Font, useTheme } from '../theme';
 import type { FoodStackParams } from '../navigation/types';
 
 type UnitMode = 'grams' | 'servings';
+
+const MEALS: { key: string; label: string }[] = [
+  { key: 'breakfast', label: 'Breakfast' },
+  { key: 'lunch', label: 'Lunch' },
+  { key: 'dinner', label: 'Dinner' },
+  { key: 'snacks', label: 'Snacks' },
+];
 
 interface Picked {
   food_id?: number;
@@ -35,17 +43,28 @@ type Props = NativeStackScreenProps<FoodStackParams, 'AddFood'>;
 export function AddFoodScreen({ navigation, route }: Props) {
   const t = useTheme();
   const qc = useQueryClient();
-  const { slot, date } = route.params;
-  // Default to "My foods" — most logging is re-adding things she already has. Scanning is the
-  // exception (the button up top jumps straight to it).
-  const [tab, setTab] = useState('My foods');
+  const { date } = route.params;
+  const [slot, setSlot] = useState(route.params.slot);
+  const [tab, setTab] = useState('Find');
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [toast, setToast] = useState<{ name: string; id: number } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flash = (name: string, id: number) => {
+    setToast({ name, id });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  };
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['foodlog', date] });
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
+    qc.invalidateQueries({ queryKey: ['foods'] });
+  };
 
   const add = useMutation({
-    mutationFn: async (p: { grams: number; food: Picked; mode: UnitMode; servingG: number | null; unitName: string | null }) => {
+    mutationFn: async (p: { grams: number; food: Picked; mode: UnitMode; servingG: number | null; unitName: string | null; slot: string }) => {
       let foodId = p.food.food_id ?? null;
-      // Save barcoded (scanned / searched) foods to the library so they're re-addable later.
-      // Dedupe by barcode so re-scanning the same product never makes a duplicate.
+      // Save barcoded (scanned / searched) foods to the library, deduped by barcode.
       if (foodId == null && p.food.barcode) {
         const existing = await api.foods.barcodeLocal(p.food.barcode).catch(() => null);
         if (existing) {
@@ -68,16 +87,16 @@ export function AddFoodScreen({ navigation, route }: Props) {
           foodId = created.id;
         }
       }
-      // Remember the piece she defined inline (grams-per-piece + its name) so "3 sausages" works next time.
+      // Remember a piece she defined inline (grams-per-piece + its name).
       if (foodId != null) {
         const patch: Partial<Food> = {};
         if (p.servingG != null && p.servingG !== (p.food.serving_g ?? null)) patch.serving_g = p.servingG;
         if (p.unitName && p.unitName !== (p.food.unit_name ?? null)) patch.unit_name = p.unitName;
         if (Object.keys(patch).length) await api.foods.update(foodId, patch).catch(() => {});
       }
-      return api.foodLog.add({
+      const res = await api.foodLog.add({
         date,
-        meal_slot: slot,
+        meal_slot: p.slot,
         food_id: foodId,
         name: p.food.name,
         grams: p.grams,
@@ -87,63 +106,113 @@ export function AddFoodScreen({ navigation, route }: Props) {
         carb_100g: p.food.carb_100g,
         fat_100g: p.food.fat_100g,
       });
+      return { id: res.added_id, name: p.food.name };
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['foodlog', date] });
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
-      qc.invalidateQueries({ queryKey: ['foods'] });
+    onSuccess: ({ id, name }) => {
+      invalidate();
       setPicked(null);
-      navigation.goBack();
+      flash(name, id); // stay open — the list re-ranks to what comes next
     },
   });
 
+  const undo = useMutation({
+    mutationFn: (id: number) => api.foodLog.remove(id),
+    onSuccess: () => {
+      invalidate();
+      setToast(null);
+    },
+  });
+
+  // One-tap re-log of a saved food's remembered amount.
+  const quickLog = (f: Food) =>
+    add.mutate({
+      grams: f.last_grams ?? f.serving_g ?? 100,
+      food: foodToPicked(f),
+      mode: f.pref_unit_mode ?? 'grams',
+      servingG: f.serving_g,
+      unitName: f.unit_name,
+      slot,
+    });
+
   return (
-    <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 16 }}>
-        <T w={800} size={26}>
-          Add to {slot}
-        </T>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-          <Pressable
-            onPress={() => setTab('Scan')}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: t.accentSoft, paddingVertical: 8, paddingHorizontal: 13, borderRadius: 999 }}
-          >
-            <Icon name="camera" size={16} stroke={2.4} color={t.accentPress} />
-            <T w={800} size={14} color={t.accentPress}>
-              Scan
-            </T>
-          </Pressable>
-          <Pressable onPress={() => navigation.goBack()}>
-            <T w={800} size={16} color={t.accentPress}>
-              Cancel
-            </T>
-          </Pressable>
+    <View style={{ flex: 1 }}>
+      <Screen>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 14 }}>
+          <T w={800} size={26}>
+            Add food
+          </T>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <Pressable
+              onPress={() => setTab('Scan')}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: t.accentSoft, paddingVertical: 8, paddingHorizontal: 13, borderRadius: 999 }}
+            >
+              <Icon name="camera" size={16} stroke={2.4} color={t.accentPress} />
+              <T w={800} size={14} color={t.accentPress}>
+                Scan
+              </T>
+            </Pressable>
+            <Pressable onPress={() => navigation.goBack()}>
+              <T w={800} size={16} color={t.accentPress}>
+                Done
+              </T>
+            </Pressable>
+          </View>
         </View>
-      </View>
 
-      <View style={{ marginBottom: 16 }}>
-        <SegmentedControl options={['My foods', 'Search', 'Scan', 'Describe']} value={tab} onChange={setTab} />
-      </View>
+        {/* meal selector — every add drops into this meal (override per item in the sheet) */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+          {MEALS.map((m) => (
+            <Chip key={m.key} active={slot === m.key} onPress={() => setSlot(m.key)}>
+              {m.label}
+            </Chip>
+          ))}
+        </View>
 
-      {tab === 'My foods' ? <FavoritesTab slot={slot} date={date} onPick={setPicked} /> : null}
-      {tab === 'Search' ? <SearchTab onPick={setPicked} /> : null}
-      {tab === 'Scan' ? <ScanTab onPick={setPicked} /> : null}
-      {tab === 'Describe' ? <DescribeTab slot={slot} date={date} onDone={() => navigation.goBack()} /> : null}
+        <View style={{ marginBottom: 16 }}>
+          <SegmentedControl options={['Find', 'Scan', 'Describe']} value={tab} onChange={setTab} />
+        </View>
 
-      <View style={{ alignItems: 'center', paddingVertical: 16, gap: 10 }}>
-        <Button variant="ghost" icon="plus" onPress={() => navigation.navigate('LabelCapture', { slot, date })}>
-          Add a custom food
-        </Button>
-        <Button variant="ghost" icon="food" onPress={() => navigation.navigate('DishBuilder', { slot, date })}>
-          Build a dish (big meal)
-        </Button>
-      </View>
+        {tab === 'Find' ? <FindTab slot={slot} date={date} onPick={setPicked} onQuickLog={quickLog} /> : null}
+        {tab === 'Scan' ? <ScanTab onPick={setPicked} /> : null}
+        {tab === 'Describe' ? <DescribeTab slot={slot} date={date} onDone={() => navigation.goBack()} /> : null}
 
-      <GramsSheet picked={picked} slot={slot} onClose={() => setPicked(null)} onAdd={(grams, food, mode, servingG, unitName) => add.mutate({ grams, food, mode, servingG, unitName })} />
-    </Screen>
+        <View style={{ alignItems: 'center', paddingVertical: 16, gap: 10 }}>
+          <Button variant="ghost" icon="plus" onPress={() => navigation.navigate('LabelCapture', { slot, date })}>
+            Add a custom food
+          </Button>
+          <Button variant="ghost" icon="food" onPress={() => navigation.navigate('DishBuilder', { slot, date })}>
+            Build a dish (big meal)
+          </Button>
+        </View>
+
+        <AmountSheet picked={picked} slot={slot} onClose={() => setPicked(null)} onAdd={(grams, food, mode, servingG, unitName, slotSel) => add.mutate({ grams, food, mode, servingG, unitName, slot: slotSel })} />
+      </Screen>
+
+      {toast ? <UndoToast name={toast.name} onUndo={() => undo.mutate(toast.id)} /> : null}
+    </View>
   );
 }
 
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function trimNum(x: number): string {
+  if (!isFinite(x) || x <= 0) return '0';
+  return String(Math.round(x * 1000) / 1000);
+}
+function pluralLabel(name: string): string {
+  const n = name.trim();
+  if (!n) return 'Pieces';
+  const p = /s$/i.test(n) ? n : `${n}s`;
+  return p.charAt(0).toUpperCase() + p.slice(1);
+}
+function rememberedAmount(f: Food): string {
+  if (f.pref_unit_mode === 'servings' && f.serving_g) {
+    const c = (f.last_grams ?? f.serving_g) / f.serving_g;
+    const nm = f.unit_name ? pluralLabel(f.unit_name).toLowerCase() : c === 1 ? 'serving' : 'servings';
+    return `${trimNum(c)} ${nm}`;
+  }
+  return `${Math.round(f.last_grams ?? f.serving_g ?? 100)} g`;
+}
 function offToPicked(o: OffFood): Picked {
   return { name: o.name, brand: o.brand, serving_g: o.serving_g, serving_label: o.serving_label, barcode: o.barcode, off_id: o.off_id, kcal_100g: o.kcal_100g, protein_100g: o.protein_100g, carb_100g: o.carb_100g, fat_100g: o.fat_100g };
 }
@@ -165,34 +234,7 @@ function foodToPicked(f: Food): Picked {
   };
 }
 
-function ResultRow({ name, brand, kcal100, onPress }: { name: string; brand?: string | null; kcal100: number; onPress: () => void }) {
-  const t = useTheme();
-  return (
-    <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderBottomWidth: 1, borderBottomColor: t.hairline }}>
-      <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: t.surface2, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon name="food" size={22} color={t.text3} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <T w={800} size={16} numberOfLines={1}>
-          {name}
-        </T>
-        <T w={700} size={13} color={t.text3} numberOfLines={1}>
-          {brand ? `${brand} · ` : ''}
-          <T num w={700} size={13} color={t.text3}>
-            {Math.round(kcal100)}
-          </T>{' '}
-          kcal/100g
-        </T>
-      </View>
-      <View style={{ width: 38, height: 38, borderRadius: 999, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon name="plus" size={20} stroke={2.8} color="#fff" />
-      </View>
-    </Pressable>
-  );
-}
-
-// Tiny typo-tolerant scorer: exact substring > all-tokens-present > subsequence. Good enough
-// to forgive misspellings in her own food library ("greek yog", "grek yogurt" → Greek yogurt).
+// Typo-tolerant scorer for her own library: substring > all-tokens > subsequence.
 function fuzzyScore(query: string, target: string): number {
   const q = query.toLowerCase().trim();
   const s = target.toLowerCase();
@@ -206,51 +248,130 @@ function fuzzyScore(query: string, target: string): number {
   return 0;
 }
 
-function SearchTab({ onPick }: { onPick: (p: Picked) => void }) {
+// ── rows ─────────────────────────────────────────────────────────────────────
+
+// Saved food: tap the body to adjust, tap ＋ to log the remembered amount instantly.
+function SuggestionRow({ food, onAdd, onOpen }: { food: Suggestion; onAdd: () => void; onOpen: () => void }) {
+  const t = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: t.hairline }}>
+      <Pressable onPress={onOpen} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12, paddingLeft: 14, paddingRight: 8, minWidth: 0 }}>
+        <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: t.surface2, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="food" size={21} color={t.text3} />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <T w={800} size={16} numberOfLines={1}>
+            {food.name}
+          </T>
+          <T w={700} size={13} color={t.text3} numberOfLines={1}>
+            {rememberedAmount(food)}
+            {food.reason ? ` · ${food.reason}` : ''}
+          </T>
+        </View>
+      </Pressable>
+      <Pressable onPress={onAdd} hitSlop={8} style={{ width: 40, height: 40, marginRight: 12, borderRadius: 999, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name="plus" size={21} stroke={2.8} color="#fff" />
+      </Pressable>
+    </View>
+  );
+}
+
+// OFF / search result with no remembered amount: whole row opens the amount sheet.
+function ResultRow({ name, brand, kcal100, onPress }: { name: string; brand?: string | null; kcal100: number; onPress: () => void }) {
+  const t = useTheme();
+  return (
+    <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderBottomWidth: 1, borderBottomColor: t.hairline }}>
+      <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: t.surface2, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name="food" size={21} color={t.text3} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <T w={800} size={16} numberOfLines={1}>
+          {name}
+        </T>
+        <T w={700} size={13} color={t.text3} numberOfLines={1}>
+          {brand ? `${brand} · ` : ''}
+          <T num w={700} size={13} color={t.text3}>
+            {Math.round(kcal100)}
+          </T>{' '}
+          kcal/100g
+        </T>
+      </View>
+      <View style={{ width: 38, height: 38, borderRadius: 999, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name="plus" size={20} stroke={2.8} color={t.accentPress} />
+      </View>
+    </Pressable>
+  );
+}
+
+// ── Find (suggestions + search) ──────────────────────────────────────────────
+
+function FindTab({ slot, date, onPick, onQuickLog }: { slot: string; date: string; onPick: (p: Picked) => void; onQuickLog: (f: Food) => void }) {
   const t = useTheme();
   const [text, setText] = useState('');
   const [q, setQ] = useState('');
   useEffect(() => {
-    const id = setTimeout(() => setQ(text.trim()), 400);
+    const id = setTimeout(() => setQ(text.trim()), 350);
     return () => clearTimeout(id);
   }, [text]);
-  const results = useQuery({ queryKey: ['off', q], queryFn: () => api.off.search(q), enabled: q.length >= 2 });
-  const mine = useQuery({ queryKey: ['foods', 'all'], queryFn: () => api.foods.list() });
 
-  // Fuzzy-match her saved foods locally so typos still find her stuff, shown above OFF results.
+  const searching = q.length >= 2;
+  const suggestions = useQuery({ queryKey: ['foods', 'suggestions', slot, date], queryFn: () => api.foods.suggestions({ slot, date }), enabled: !searching });
+  const mine = useQuery({ queryKey: ['foods', 'all'], queryFn: () => api.foods.list() });
+  const off = useQuery({ queryKey: ['off', q], queryFn: () => api.off.search(q), enabled: searching });
+
   const localMatches = useMemo(() => {
-    if (q.length < 2 || !mine.data) return [];
+    if (!searching || !mine.data) return [];
     return mine.data
       .map((f) => ({ f, score: fuzzyScore(q, `${f.name} ${f.brand ?? ''}`) }))
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score)
-      .slice(0, 6)
+      .slice(0, 8)
       .map((x) => x.f);
-  }, [q, mine.data]);
+  }, [q, mine.data, searching]);
 
   return (
     <View>
-      <TextField label="Search foods" value={text} onChangeText={setText} placeholder="e.g. greek yogurt" autoFocus />
-      {q.length >= 2 ? (
+      <TextField label="Find food" value={text} onChangeText={setText} placeholder="Search your foods + online" autoFocus />
+
+      {!searching ? (
+        suggestions.data && suggestions.data.length ? (
+          <>
+            <SectionLabel style={{ marginBottom: 10 }}>Suggested now</SectionLabel>
+            <Card pad={6}>
+              {suggestions.data.map((f) => (
+                <SuggestionRow key={f.id} food={f} onAdd={() => onQuickLog(f)} onOpen={() => onPick(foodToPicked(f))} />
+              ))}
+            </Card>
+          </>
+        ) : suggestions.isLoading ? (
+          <T w={700} color={t.text3} style={{ padding: 8 }}>
+            Loading your foods…
+          </T>
+        ) : (
+          <T w={600} size={14} color={t.text3} style={{ padding: 8 }}>
+            Foods you scan, search, or log show up here — sorted by what you reach for most.
+          </T>
+        )
+      ) : (
         <>
           {localMatches.length ? (
             <>
               <SectionLabel style={{ marginBottom: 10 }}>Your foods</SectionLabel>
               <Card pad={6} style={{ marginBottom: 16 }}>
                 {localMatches.map((f) => (
-                  <ResultRow key={`mine-${f.id}`} name={f.name} brand={f.brand} kcal100={f.kcal_100g} onPress={() => onPick(foodToPicked(f))} />
+                  <SuggestionRow key={`mine-${f.id}`} food={f} onAdd={() => onQuickLog(f)} onOpen={() => onPick(foodToPicked(f))} />
                 ))}
               </Card>
             </>
           ) : null}
           <SectionLabel style={{ marginBottom: 10 }}>Open Food Facts · per 100 g</SectionLabel>
-          {results.isLoading ? (
+          {off.isLoading ? (
             <T w={700} color={t.text3} style={{ padding: 8 }}>
               Searching…
             </T>
-          ) : results.data && results.data.length ? (
+          ) : off.data && off.data.length ? (
             <Card pad={6}>
-              {results.data.slice(0, 15).map((r, i) => (
+              {off.data.slice(0, 15).map((r, i) => (
                 <ResultRow key={`${r.barcode}-${i}`} name={r.name} brand={r.brand} kcal100={r.kcal_100g} onPress={() => onPick(offToPicked(r))} />
               ))}
             </Card>
@@ -260,46 +381,16 @@ function SearchTab({ onPick }: { onPick: (p: Picked) => void }) {
             </T>
           ) : (
             <T w={700} color={t.text3} style={{ padding: 8 }}>
-              No matches — try the AI label capture below.
+              No matches — try “Add a custom food” below.
             </T>
           )}
         </>
-      ) : (
-        <T w={600} size={14} color={t.text3} style={{ padding: 8 }}>
-          Type at least 2 letters to search your foods + Open Food Facts.
-        </T>
       )}
     </View>
   );
 }
 
-function FavoritesTab({ slot, date, onPick }: { slot: string; date: string; onPick: (p: Picked) => void }) {
-  const t = useTheme();
-  // Smart order: frequency + recency + this meal slot + what usually follows the last thing logged.
-  const foods = useQuery({ queryKey: ['foods', 'suggestions', slot, date], queryFn: () => api.foods.suggestions({ slot, date }) });
-  if (foods.isLoading)
-    return (
-      <T w={700} color={t.text3} style={{ padding: 8 }}>
-        Loading your foods…
-      </T>
-    );
-  if (!foods.data?.length)
-    return (
-      <T w={600} size={14} color={t.text3} style={{ padding: 8 }}>
-        Foods you scan, search, or log will show up here — sorted by what you reach for most.
-      </T>
-    );
-  return (
-    <View>
-      <SectionLabel style={{ marginBottom: 10 }}>Suggested for you</SectionLabel>
-      <Card pad={6}>
-        {foods.data.map((f) => (
-          <ResultRow key={f.id} name={f.name} brand={f.brand} kcal100={f.kcal_100g} onPress={() => onPick(foodToPicked(f))} />
-        ))}
-      </Card>
-    </View>
-  );
-}
+// ── Describe (AI natural-language) ───────────────────────────────────────────
 
 interface NlItem {
   name: string;
@@ -316,6 +407,8 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
   const [text, setText] = useState('');
   const [items, setItems] = useState<NlItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [padIdx, setPadIdx] = useState<number | null>(null);
+  const pad = useNumberField('0');
 
   const parse = useMutation({
     mutationFn: () => api.ai.parseFood(text),
@@ -332,11 +425,15 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
         })),
       );
     },
-    onError: (e: any) => setError(e?.status === 503 ? 'AI is off — add ANTHROPIC_API_KEY on the server.' : 'Couldn’t read that — try the Search tab.'),
+    onError: (e: any) => setError(e?.status === 503 ? 'AI is off — add ANTHROPIC_API_KEY on the server.' : 'Couldn’t read that — try the Find tab.'),
   });
 
-  const setGrams = (i: number, g: string) => setItems((xs) => (xs ? xs.map((it, idx) => (idx === i ? { ...it, grams: Number(g) || 0 } : it)) : xs));
+  const setGrams = (i: number, g: number) => setItems((xs) => (xs ? xs.map((it, idx) => (idx === i ? { ...it, grams: g } : it)) : xs));
   const remove = (i: number) => setItems((xs) => (xs ? xs.filter((_, idx) => idx !== i) : xs));
+  const openPad = (i: number) => {
+    pad.reset(String(items?.[i].grams ?? 0));
+    setPadIdx(i);
+  };
 
   const logAll = async () => {
     if (!items) return;
@@ -348,6 +445,9 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     onDone();
   };
+
+  const padItem = padIdx != null ? items?.[padIdx] : null;
+  const padG = Number(pad.value) || 0;
 
   return (
     <View>
@@ -374,12 +474,14 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
                     {Math.round((it.kcal_100g * it.grams) / 100)} kcal
                   </T>
                 </View>
-                <View style={{ width: 76, flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderWidth: 1.5, borderColor: t.hairline, borderRadius: 10, paddingHorizontal: 8 }}>
-                  <TextInput value={String(it.grams)} onChangeText={(g) => setGrams(i, g)} keyboardType="numeric" style={{ flex: 1, fontFamily: Font[800], fontSize: 15, color: t.text, paddingVertical: 8 }} />
+                <Pressable onPress={() => openPad(i)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: t.surface, borderWidth: 1.5, borderColor: t.hairline, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
+                  <T num w={800} size={15}>
+                    {it.grams}
+                  </T>
                   <T w={700} size={11} color={t.text3}>
                     g
                   </T>
-                </View>
+                </Pressable>
                 <Pressable onPress={() => remove(i)} hitSlop={8}>
                   <T w={800} size={20} color={t.text3}>
                     ×
@@ -399,6 +501,38 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
           Nothing recognized — try rephrasing.
         </T>
       ) : null}
+
+      <Sheet visible={padIdx != null} onClose={() => setPadIdx(null)} title={padItem?.name ?? 'Amount'}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5 }}>
+            <T num w={800} size={30}>
+              {pad.value || '0'}
+            </T>
+            <T w={800} size={15} color={t.text3}>
+              g
+            </T>
+          </View>
+          {padItem ? (
+            <T num w={800} size={24} color={t.accentPress}>
+              {Math.round((padItem.kcal_100g * padG) / 100)} kcal
+            </T>
+          ) : null}
+        </View>
+        <View style={{ marginBottom: 16 }}>
+          <NumberPad onKey={pad.press} />
+        </View>
+        <Button
+          full
+          size="lg"
+          icon="check"
+          onPress={() => {
+            if (padIdx != null) setGrams(padIdx, padG);
+            setPadIdx(null);
+          }}
+        >
+          Done
+        </Button>
+      </Sheet>
     </View>
   );
 }
@@ -414,8 +548,8 @@ function ScanTab({ onPick }: { onPick: (p: Picked) => void }) {
     setBusy(true);
     try {
       const local = await api.foods.barcodeLocal(code).catch(() => null);
-      const off = local ? null : await api.off.barcode(code).catch(() => null);
-      const food = local ? foodToPicked(local as Food) : off ? offToPicked(off) : null;
+      const offFood = local ? null : await api.off.barcode(code).catch(() => null);
+      const food = local ? foodToPicked(local as Food) : offFood ? offToPicked(offFood) : null;
       if (food) onPick(food);
     } finally {
       setBusy(false);
@@ -433,25 +567,9 @@ function ScanTab({ onPick }: { onPick: (p: Picked) => void }) {
   );
 }
 
-// ── grams / servings entry ──────────────────────────────────────────────────
+// ── amount sheet (grams / named pieces) ──────────────────────────────────────
 
-// Format a number for display: drop trailing zeros, cap at 3 decimals.
-function trimNum(x: number): string {
-  if (!isFinite(x) || x <= 0) return '0';
-  return String(Math.round(x * 1000) / 1000);
-}
-
-// "sausage" → "Sausages" for the tile label; empty → "Pieces".
-function pluralLabel(name: string): string {
-  const n = name.trim();
-  if (!n) return 'Pieces';
-  const p = /s$/i.test(n) ? n : `${n}s`;
-  return p.charAt(0).toUpperCase() + p.slice(1);
-}
-
-const KEYS: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'back'];
-
-function GramsSheet({
+function AmountSheet({
   picked,
   slot,
   onClose,
@@ -460,16 +578,16 @@ function GramsSheet({
   picked: Picked | null;
   slot: string;
   onClose: () => void;
-  onAdd: (grams: number, food: Picked, mode: UnitMode, servingG: number | null, unitName: string | null) => void;
+  onAdd: (grams: number, food: Picked, mode: UnitMode, servingG: number | null, unitName: string | null, slot: string) => void;
 }) {
   const t = useTheme();
   const [mode, setMode] = useState<UnitMode>('grams');
-  const [entry, setEntry] = useState('100'); // amount in the active mode (grams, or a piece count)
-  const [pieceEntry, setPieceEntry] = useState(''); // grams in one piece (may be unset)
-  const [unitName, setUnitName] = useState(''); // e.g. "sausage"
-  const [field, setField] = useState<'amount' | 'piece'>('amount'); // what the numpad edits
-  // "fresh" = the active field shows a pre-fill; the first keypress replaces it (start typing instantly).
+  const [entry, setEntry] = useState('100');
+  const [pieceEntry, setPieceEntry] = useState('');
+  const [unitName, setUnitName] = useState('');
+  const [field, setField] = useState<'amount' | 'piece'>('amount');
   const [fresh, setFresh] = useState(true);
+  const [sheetSlot, setSheetSlot] = useState(slot);
 
   useEffect(() => {
     if (!picked) return;
@@ -482,36 +600,37 @@ function GramsSheet({
     setField('amount');
     setEntry(startMode === 'servings' && pg ? trimNum(startGrams / pg) : trimNum(startGrams));
     setFresh(true);
-  }, [picked]);
+    setSheetSlot(slot);
+  }, [picked, slot]);
 
   if (!picked) return null;
 
   const pieceG = Number(pieceEntry) > 0 ? Number(pieceEntry) : null;
   const canUnits = pieceG != null;
-  const effMode: UnitMode = canUnits ? mode : 'grams'; // 'servings' here means "pieces"
+  const effMode: UnitMode = canUnits ? mode : 'grams';
   const amt = Number(entry) || 0;
   const grams = effMode === 'servings' && pieceG ? amt * pieceG : amt;
   const count = pieceG ? grams / pieceG : null;
   const kcal = Math.round((picked.kcal_100g * grams) / 100);
-  const piecesLabel = pluralLabel(unitName);
+  const fromServing = !picked.unit_name && picked.serving_g ? true : false;
+  const piecesLabel = picked.unit_name || !fromServing ? pluralLabel(unitName) : 'Servings';
 
-  const apply = (cur: string, key: string): string => {
+  const press = (key: string) => {
+    if (field === 'piece') setPieceEntry((c) => applyKey(c, key));
+    else setEntry((c) => applyKey(c, key));
+    setFresh(false);
+  };
+  const applyKey = (cur: string, key: string): string => {
     if (key === 'back') return fresh || cur.length <= 1 ? '0' : cur.slice(0, -1);
     const base = fresh || cur === '0' ? '' : cur;
     if (key === '.') return base.includes('.') ? base : `${base === '' ? '0' : base}.`;
     const next = base + key;
     return next.length > 7 ? base : next;
   };
-  const press = (key: string) => {
-    if (field === 'piece') setPieceEntry((c) => apply(c, key));
-    else setEntry((c) => apply(c, key));
-    setFresh(false);
-  };
 
-  // Tap a tile to choose what you're counting: grams, or pieces.
   const pickAmount = (m: UnitMode) => {
     if (m === 'servings' && !canUnits) {
-      setField('piece'); // no piece size yet — set it first
+      setField('piece');
       setFresh(true);
       return;
     }
@@ -521,6 +640,16 @@ function GramsSheet({
     setFresh(false);
   };
 
+  const setQuick = (v: string) => {
+    setEntry(v);
+    setField('amount');
+    setFresh(false);
+  };
+  const quickChips =
+    effMode === 'servings'
+      ? ['1', '2', '3', '4']
+      : Array.from(new Set([...(pieceG ? [trimNum(pieceG), trimNum(pieceG * 2)] : []), '50', '100', '150', '200']));
+
   return (
     <Sheet visible={!!picked} onClose={onClose} title={picked.name}>
       {picked.brand ? (
@@ -529,21 +658,18 @@ function GramsSheet({
         </T>
       ) : null}
 
-      {/* Grams + Pieces shown together so you can cross-check; tap either to switch what you count. */}
       <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
         <StatTile label="Grams" value={trimNum(grams)} unit="g" active={field === 'amount' && effMode === 'grams'} onPress={() => pickAmount('grams')} />
         <StatTile
           label={piecesLabel}
           value={canUnits ? (count != null ? trimNum(count) : '—') : 'Set'}
-          unit=""
           sub={canUnits ? undefined : 'tap to set size'}
           active={field === 'amount' && effMode === 'servings'}
           onPress={() => pickAmount('servings')}
         />
       </View>
 
-      {/* Piece editor — name it ("sausage") + how many grams it weighs. Remembered on the food,
-          so next time you just type how many you ate. */}
+      {/* piece editor — name it ("sausage") + how many grams it weighs; remembered on the food */}
       <View
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, marginBottom: 12, backgroundColor: field === 'piece' ? t.accentSoft : t.surface2, borderWidth: 1.5, borderColor: field === 'piece' ? t.accent : t.hairline }}
       >
@@ -574,6 +700,17 @@ function GramsSheet({
         </Pressable>
       </View>
 
+      {/* quick amounts */}
+      {field === 'amount' ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          {quickChips.map((c) => (
+            <Chip key={c} active={entry === c} onPress={() => setQuick(c)}>
+              {effMode === 'servings' ? c : `${c} g`}
+            </Chip>
+          ))}
+        </View>
+      ) : null}
+
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
         <T w={700} size={15} color={t.text2}>
           {field === 'piece' ? `Grams in 1 ${unitName.trim() || 'piece'}` : effMode === 'servings' ? `Counting ${piecesLabel.toLowerCase()}` : 'Entering grams'}
@@ -585,76 +722,46 @@ function GramsSheet({
         )}
       </View>
 
-      {/* On-screen numpad — no system keyboard, so it works the same on iPad and phone. */}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-        {KEYS.map((k) => (
-          <Pressable
-            key={k}
-            onPress={() => press(k)}
-            style={({ pressed }) => ({
-              width: '31.5%',
-              flexGrow: 1,
-              height: 56,
-              borderRadius: 14,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: pressed ? t.accentSoft : t.surface,
-              borderWidth: 1.5,
-              borderColor: t.hairline,
-            })}
-          >
-            {k === 'back' ? (
-              <Icon name="chevL" size={22} stroke={2.4} color={t.text2} />
-            ) : (
-              <T w={800} size={23}>
-                {k}
-              </T>
-            )}
-          </Pressable>
+      <View style={{ marginBottom: 14 }}>
+        <NumberPad onKey={press} />
+      </View>
+
+      {/* meal selector */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+        {MEALS.map((m) => (
+          <Chip key={m.key} active={sheetSlot === m.key} onPress={() => setSheetSlot(m.key)}>
+            {m.label}
+          </Chip>
         ))}
       </View>
 
       {field === 'piece' ? (
-        <Button full size="lg" icon="check" onPress={() => { setField('amount'); setFresh(false); }}>
+        <Button
+          full
+          size="lg"
+          icon="check"
+          onPress={() => {
+            setField('amount');
+            setFresh(false);
+          }}
+        >
           Done
         </Button>
       ) : (
-        <Button full size="lg" icon="check" onPress={() => onAdd(grams, picked, effMode, pieceG, unitName.trim() || null)}>
-          Add to {slot}
+        <Button full size="lg" icon="check" onPress={() => onAdd(grams, picked, effMode, pieceG, unitName.trim() || null, sheetSlot)}>
+          Add to {MEALS.find((m) => m.key === sheetSlot)?.label ?? sheetSlot}
         </Button>
       )}
     </Sheet>
   );
 }
 
-function StatTile({
-  label,
-  value,
-  unit,
-  sub,
-  active,
-  onPress,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  sub?: string;
-  active: boolean;
-  onPress: () => void;
-}) {
+function StatTile({ label, value, unit, sub, active, onPress }: { label: string; value: string; unit?: string; sub?: string; active: boolean; onPress: () => void }) {
   const t = useTheme();
   return (
     <Pressable
       onPress={onPress}
-      style={{
-        flex: 1,
-        paddingVertical: 12,
-        paddingHorizontal: 14,
-        borderRadius: 16,
-        backgroundColor: active ? t.accentSoft : t.surface2,
-        borderWidth: 2,
-        borderColor: active ? t.accent : t.hairline,
-      }}
+      style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, backgroundColor: active ? t.accentSoft : t.surface2, borderWidth: 2, borderColor: active ? t.accent : t.hairline }}
     >
       <T w={800} size={11} color={active ? t.accentPress : t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>
         {label}
@@ -675,5 +782,47 @@ function StatTile({
         </T>
       ) : null}
     </Pressable>
+  );
+}
+
+// ── undo toast ───────────────────────────────────────────────────────────────
+
+function UndoToast({ name, onUndo }: { name: string; onUndo: () => void }) {
+  const t = useTheme();
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    v.setValue(0);
+    Animated.timing(v, { toValue: 1, duration: 240, easing: Easing.out(Easing.back(1.5)), useNativeDriver: true }).start();
+  }, [name, v]);
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        bottom: 24,
+        alignSelf: 'center',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+        paddingVertical: 12,
+        paddingLeft: 16,
+        paddingRight: 8,
+        borderRadius: 999,
+        backgroundColor: t.text,
+        opacity: v,
+        transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
+      }}
+    >
+      <View style={{ width: 22, height: 22, borderRadius: 999, backgroundColor: t.success, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name="check" size={14} stroke={3} color="#fff" />
+      </View>
+      <T w={800} size={15} color={t.bg} numberOfLines={1}>
+        {name} logged
+      </T>
+      <Pressable onPress={onUndo} hitSlop={8} style={{ paddingVertical: 6, paddingHorizontal: 14, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.16)' }}>
+        <T w={800} size={14} color="#fff">
+          Undo
+        </T>
+      </Pressable>
+    </Animated.View>
   );
 }

@@ -141,8 +141,9 @@ export function foodLogRouter(db: DB): Router {
       const um = b.unit_mode === 'servings' ? 'servings' : b.unit_mode === 'grams' ? 'grams' : null;
       db.prepare('UPDATE foods SET pref_unit_mode = COALESCE(?, pref_unit_mode), last_grams = ?, updated_at = ? WHERE id = ?').run(um, grams, ts, b.food_id);
     }
-    writeAudit(db, { entity: 'food_log', entityId: Number(info.lastInsertRowid), action: 'create' });
-    res.json(daySummary(db, date));
+    const addedId = Number(info.lastInsertRowid);
+    writeAudit(db, { entity: 'food_log', entityId: addedId, action: 'create' });
+    res.json({ ...daySummary(db, date), added_id: addedId });
   });
 
   r.patch('/:id', (req, res) => {

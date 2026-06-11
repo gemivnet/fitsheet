@@ -71,6 +71,8 @@ export interface Food {
   last_grams: number | null;
 }
 
+export type Suggestion = Food & { reason?: string | null };
+
 export interface OffFood {
   name: string;
   brand: string | null;
@@ -256,7 +258,7 @@ export const api = {
       const qs = new URLSearchParams();
       if (p.slot) qs.set('slot', p.slot);
       if (p.date) qs.set('date', p.date);
-      return req<Food[]>('GET', `/api/foods/suggestions${qs.toString() ? `?${qs}` : ''}`);
+      return req<Suggestion[]>('GET', `/api/foods/suggestions${qs.toString() ? `?${qs}` : ''}`);
     },
     create: (f: Partial<Food>) => req<Food>('POST', '/api/foods', f),
     update: (id: number, p: Partial<Food>) => req<Food>('PATCH', `/api/foods/${id}`, p),
@@ -271,7 +273,7 @@ export const api = {
 
   foodLog: {
     day: (date: string) => req<DaySummary>('GET', `/api/food-log?date=${date}`),
-    add: (e: NewLogEntry) => req<DaySummary>('POST', '/api/food-log', e),
+    add: (e: NewLogEntry) => req<DaySummary & { added_id: number }>('POST', '/api/food-log', e),
     snooze: (date: string, snoozed: boolean) => req<DaySummary>('POST', '/api/food-log/snooze', { date, snoozed }),
     mealComplete: (date: string, meal_slot: string, complete: boolean) => req<DaySummary>('POST', '/api/food-log/meal-complete', { date, meal_slot, complete }),
     update: (id: number, p: { grams?: number; meal_slot?: string }) => req<DaySummary>('PATCH', `/api/food-log/${id}`, p),

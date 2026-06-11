@@ -6,7 +6,7 @@ import { Pressable, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, FoodRow, Icon, ProgressBar, RoundBtn, Screen, Sheet, T } from '../components';
+import { Button, Card, Chip, FoodRow, Icon, NumberPad, ProgressBar, RoundBtn, Screen, Sheet, T, useNumberField } from '../components';
 import { api, type LogEntry } from '../lib/api';
 import { confirmAction } from '../lib/dialog';
 import { addDaysStr, isToday, prettyDate, slotForNow, todayStr } from '../lib/date';
@@ -20,7 +20,6 @@ const SLOTS: { key: string; label: string }[] = [
   { key: 'snacks', label: 'Snacks' },
 ];
 
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'back'];
 const fmt = (x: number) => String(Math.round(x * 10) / 10);
 
 type Props = NativeStackScreenProps<FoodStackParams, 'FoodDay'>;
@@ -217,32 +216,19 @@ function LogItemSheet({
   onRemove: (it: LogEntry) => void;
 }) {
   const t = useTheme();
-  const [grams, setGrams] = useState('100');
+  const grams = useNumberField('100');
   const [slot, setSlot] = useState('snacks');
-  const [fresh, setFresh] = useState(true);
 
   useEffect(() => {
     if (!item) return;
-    setGrams(fmt(item.grams));
+    grams.reset(fmt(item.grams));
     setSlot(item.meal_slot);
-    setFresh(true);
   }, [item]);
 
   if (!item) return null;
-  const g = Number(grams) || 0;
+  const g = Number(grams.value) || 0;
   const per100 = item.grams > 0 ? (item.kcal / item.grams) * 100 : 0;
   const kcal = Math.round((per100 * g) / 100);
-
-  const press = (k: string) => {
-    setGrams((cur) => {
-      if (k === 'back') return fresh || cur.length <= 1 ? '0' : cur.slice(0, -1);
-      const base = fresh || cur === '0' ? '' : cur;
-      if (k === '.') return base.includes('.') ? base : `${base === '' ? '0' : base}.`;
-      const next = base + k;
-      return next.length > 7 ? base : next;
-    });
-    setFresh(false);
-  };
 
   return (
     <Sheet visible={!!item} onClose={onClose} title={item.name}>
@@ -260,26 +246,8 @@ function LogItemSheet({
         </T>
       </View>
 
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-        {KEYS.map((k) => (
-          <Pressable
-            key={k}
-            onPress={() => press(k)}
-            style={({ pressed }) => ({
-              width: '31.5%',
-              flexGrow: 1,
-              height: 54,
-              borderRadius: 14,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: pressed ? t.accentSoft : t.surface,
-              borderWidth: 1.5,
-              borderColor: t.hairline,
-            })}
-          >
-            {k === 'back' ? <Icon name="chevL" size={22} stroke={2.4} color={t.text2} /> : <T w={800} size={23}>{k}</T>}
-          </Pressable>
-        ))}
+      <View style={{ marginBottom: 16 }}>
+        <NumberPad onKey={grams.press} keyHeight={54} />
       </View>
 
       <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>

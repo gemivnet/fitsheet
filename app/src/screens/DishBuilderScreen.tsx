@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Icon, Screen, SectionLabel, Sheet, T, TextField } from '../components';
+import { applyNumberKey, Button, Card, Icon, NumberField, NumberPad, Screen, SectionLabel, Sheet, T, TextField, useNumberField } from '../components';
 import { api, type Food, type OffFood } from '../lib/api';
 import { notify } from '../lib/dialog';
 import { useTheme } from '../theme';
@@ -44,6 +44,17 @@ export function DishBuilderScreen({ navigation, route }: Props) {
   const [cookedWeight, setCookedWeight] = useState('');
   const [portion, setPortion] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [active, setActive] = useState<'cooked' | 'ate'>('ate');
+  const fresh = useRef(true);
+  const focus = (f: 'cooked' | 'ate') => {
+    setActive(f);
+    fresh.current = true;
+  };
+  const pressNum = (k: string) => {
+    const setter = active === 'cooked' ? setCookedWeight : setPortion;
+    setter((cur) => applyNumberKey(cur, k, fresh.current));
+    fresh.current = false;
+  };
 
   const totals = ingredients.reduce(
     (a, i) => ({
@@ -146,13 +157,16 @@ export function DishBuilderScreen({ navigation, route }: Props) {
 
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <View style={{ flex: 1 }}>
-          <TextField label="Cooked weight" value={cookedWeight} onChangeText={setCookedWeight} keyboardType="numeric" suffix="g" placeholder={String(summed || 0)} />
+          <NumberField label="Cooked weight" value={cookedWeight || String(summed || 0)} unit="g" active={active === 'cooked'} onPress={() => focus('cooked')} />
         </View>
         <View style={{ flex: 1 }}>
-          <TextField label="You ate" value={portion} onChangeText={setPortion} keyboardType="numeric" suffix="g" />
+          <NumberField label="You ate" value={portion} unit="g" active={active === 'ate'} onPress={() => focus('ate')} />
         </View>
       </View>
-      <T w={600} size={12} color={t.text3} style={{ marginTop: -6, marginBottom: 14 }}>
+      <View style={{ marginBottom: 14 }}>
+        <NumberPad onKey={pressNum} keyHeight={50} />
+      </View>
+      <T w={600} size={12} color={t.text3} style={{ marginTop: -2, marginBottom: 14 }}>
         Cooked weight defaults to the raw total — weigh the finished dish if water cooked off.
       </T>
 
@@ -202,7 +216,7 @@ function IngredientPicker({ visible, onClose, onAdd }: { visible: boolean; onClo
   const [text, setText] = useState('');
   const [q, setQ] = useState('');
   const [pending, setPending] = useState<Pick | null>(null);
-  const [grams, setGrams] = useState('');
+  const gramsPad = useNumberField('');
   const [manual, setManual] = useState(false);
   const [mName, setMName] = useState('');
   const [mKcal, setMKcal] = useState('');
@@ -216,13 +230,13 @@ function IngredientPicker({ visible, onClose, onAdd }: { visible: boolean; onClo
 
   const reset = () => {
     setPending(null);
-    setGrams('');
+    gramsPad.reset('');
     setManual(false);
     setMName('');
     setMKcal('');
   };
   const confirmAdd = () => {
-    const g = Number(grams) || 0;
+    const g = Number(gramsPad.value) || 0;
     if (!g) return;
     if (manual) {
       if (!mName.trim()) return;
@@ -263,7 +277,20 @@ function IngredientPicker({ visible, onClose, onAdd }: { visible: boolean; onClo
               <TextField label="Calories per 100 g" value={mKcal} onChangeText={setMKcal} keyboardType="numeric" suffix="kcal" />
             </>
           ) : null}
-          <TextField label="Amount used" value={grams} onChangeText={setGrams} keyboardType="numeric" suffix="grams" autoFocus={!manual} />
+          <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
+            Amount used
+          </T>
+          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderWidth: 1.5, borderColor: t.hairline, borderRadius: 13, paddingHorizontal: 14, marginBottom: 12 }}>
+            <T num w={800} size={22} color={t.text} style={{ flex: 1, paddingVertical: 12 }}>
+              {gramsPad.value || '0'}
+            </T>
+            <T w={700} size={13} color={t.text3}>
+              grams
+            </T>
+          </View>
+          <View style={{ marginBottom: 14 }}>
+            <NumberPad onKey={gramsPad.press} keyHeight={50} />
+          </View>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <View style={{ flex: 1 }}>
               <Button full variant="ghost" onPress={reset}>

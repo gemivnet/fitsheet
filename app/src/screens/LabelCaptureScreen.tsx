@@ -1,17 +1,19 @@
 // LabelCaptureScreen.tsx — snap a nutrition label → server runs Claude vision → prefill an
 // editable custom food → save (and optionally log it). Falls back to manual entry if AI is off.
+// Numbers are entered with the shared on-screen numpad (tap a box, type — first key replaces).
 
-import React, { useState } from 'react';
-import { Platform, Pressable, TextInput, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { Platform, Pressable, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Icon, Screen, SectionLabel, T, TextField } from '../components';
+import { applyNumberKey, Button, Card, Icon, NumberField, NumberPad, Screen, SectionLabel, T, TextField } from '../components';
 import { api } from '../lib/api';
-import { Font, useTheme } from '../theme';
+import { useTheme } from '../theme';
 import type { FoodStackParams } from '../navigation/types';
 
 type Props = NativeStackScreenProps<FoodStackParams, 'LabelCapture'>;
+type Field = 'serving' | 'kcal' | 'protein' | 'carb' | 'fat';
 
 export function LabelCaptureScreen({ navigation, route }: Props) {
   const t = useTheme();
@@ -30,8 +32,20 @@ export function LabelCaptureScreen({ navigation, route }: Props) {
   const [carb, setCarb] = useState('');
   const [fat, setFat] = useState('');
 
+  const [active, setActive] = useState<Field | null>(null);
+  const fresh = useRef(true);
+  const setters: Record<Field, React.Dispatch<React.SetStateAction<string>>> = { serving: setServingG, kcal: setKcal, protein: setProtein, carb: setCarb, fat: setFat };
+  const focusField = (f: Field) => {
+    setActive(f);
+    fresh.current = true;
+  };
+  const press = (k: string) => {
+    if (!active) return;
+    setters[active]((cur) => applyNumberKey(cur, k, fresh.current));
+    fresh.current = false;
+  };
+
   async function pick(from: 'camera' | 'library') {
-    // On web there's no launchCameraAsync; the library picker offers the camera on mobile Safari.
     const useLibrary = from === 'library' || Platform.OS === 'web';
     const res = useLibrary
       ? await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 })
@@ -156,26 +170,35 @@ export function LabelCaptureScreen({ navigation, route }: Props) {
           ) : null}
 
           <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Aldi Crunchy Oat Cereal" />
-          <TextField label="Serving size" value={servingG} onChangeText={setServingG} keyboardType="numeric" suffix="grams" />
+          <NumberField label="Serving size" value={servingG} unit="g" active={active === 'serving'} onPress={() => focusField('serving')} />
           <SectionLabel style={{ marginBottom: 10, marginTop: 4 }}>Per serving</SectionLabel>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <View style={{ flex: 1 }}>
-              <NumField label="Calories" value={kcal} onChange={setKcal} unit="kcal" flagged={lowConf} />
+              <NumberField label="Calories" value={kcal} unit="kcal" active={active === 'kcal'} flagged={lowConf} onPress={() => focusField('kcal')} />
             </View>
             <View style={{ flex: 1 }}>
-              <NumField label="Protein" value={protein} onChange={setProtein} unit="g" />
+              <NumberField label="Protein" value={protein} unit="g" active={active === 'protein'} onPress={() => focusField('protein')} />
             </View>
           </View>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <View style={{ flex: 1 }}>
-              <NumField label="Carbs" value={carb} onChange={setCarb} unit="g" flagged={lowConf} />
+              <NumberField label="Carbs" value={carb} unit="g" active={active === 'carb'} flagged={lowConf} onPress={() => focusField('carb')} />
             </View>
             <View style={{ flex: 1 }}>
-              <NumField label="Fat" value={fat} onChange={setFat} unit="g" />
+              <NumberField label="Fat" value={fat} unit="g" active={active === 'fat'} onPress={() => focusField('fat')} />
             </View>
           </View>
 
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+          <View style={{ marginTop: 4, marginBottom: 16 }}>
+            {active ? null : (
+              <T w={700} size={13} color={t.text3} style={{ textAlign: 'center', marginBottom: 8 }}>
+                Tap a box above, then type.
+              </T>
+            )}
+            <NumberPad onKey={press} />
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 10 }}>
             <View style={{ flex: 1 }}>
               <Button variant="ghost" icon="star" full onPress={() => save(false)}>
                 Save &amp; favorite
@@ -190,30 +213,5 @@ export function LabelCaptureScreen({ navigation, route }: Props) {
         </View>
       ) : null}
     </Screen>
-  );
-}
-
-function NumField({ label, value, onChange, unit, flagged }: { label: string; value: string; onChange: (v: string) => void; unit: string; flagged?: boolean }) {
-  const t = useTheme();
-  return (
-    <View style={{ marginBottom: 12 }}>
-      <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
-        {label}
-      </T>
-      <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 13, paddingHorizontal: 14, borderWidth: flagged ? 2 : 1.5, borderColor: flagged ? t.caution : t.hairline }}>
-        <TextInput
-          value={value}
-          onChangeText={onChange}
-          keyboardType="numeric"
-          placeholder="0"
-          placeholderTextColor={t.text3}
-          style={{ flex: 1, fontFamily: Font[800], fontSize: 20, color: t.text, paddingVertical: 12 }}
-        />
-        <T w={700} size={13} color={t.text3}>
-          {unit}
-        </T>
-        {flagged ? <Icon name="edit" size={16} color={t.caution} /> : null}
-      </View>
-    </View>
   );
 }

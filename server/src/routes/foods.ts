@@ -52,42 +52,55 @@ export function foodsRouter(db: DB): Router {
       .all(nowHour, nowHour) as { food_id: number; near: number }[];
     const hourNear = new Map(hourRows.map((h) => [h.food_id, h.near]));
 
-    // the food she logged most recently (today) anchors the "what comes next" suggestion
+    // the food she logged most recently (today) anchors the "what comes next" suggestion —
+    // count only the IMMEDIATE next item after it on each past day (grits → brown sugar).
     const anchorRow = date
       ? (db
           .prepare("SELECT food_id FROM food_log WHERE food_id IS NOT NULL AND day_date = ? ORDER BY created_at DESC, id DESC LIMIT 1")
           .get(date) as { food_id: number } | undefined)
       : undefined;
+    const anchorName = anchorRow?.food_id != null ? (db.prepare('SELECT name FROM foods WHERE id = ?').get(anchorRow.food_id) as { name: string } | undefined)?.name : undefined;
     const seq = new Map<number, number>();
     if (anchorRow?.food_id != null) {
       const rows = db
         .prepare(
           'SELECT b.food_id AS fid, COUNT(*) AS n FROM food_log a ' +
-            'JOIN food_log b ON a.day_date = b.day_date AND b.created_at > a.created_at ' +
-            'AND b.food_id IS NOT NULL AND b.food_id != a.food_id ' +
+            'JOIN food_log b ON b.id = (' +
+            '  SELECT c.id FROM food_log c WHERE c.day_date = a.day_date AND c.created_at > a.created_at ' +
+            '  AND c.food_id IS NOT NULL AND c.food_id != a.food_id ORDER BY c.created_at, c.id LIMIT 1) ' +
             'WHERE a.food_id = ? GROUP BY b.food_id',
         )
         .all(anchorRow.food_id) as { fid: number; n: number }[];
       for (const row of rows) seq.set(row.fid, row.n);
     }
 
+    const slotLabel = slot ? slot.charAt(0).toUpperCase() + slot.slice(1) : '';
     const now = Date.now();
     const scored = foods.map((f) => {
       const s = stat.get(f.id);
-      let score = 0;
-      if (s) {
-        score += Math.min(s.total, 20) * 1.0; // frequency (capped)
-        score += (s.slot_count ?? 0) * 3.0; // this meal slot — strong time-of-day signal
-        const days = s.last_at ? Math.max(0, (now - Date.parse(s.last_at)) / 86_400_000) : 999;
-        score += 10 / (1 + days); // recency
-      }
-      score += Math.min(hourNear.get(f.id) ?? 0, 10) * 2.5; // logged around this time of day
-      score += (seq.get(f.id) ?? 0) * 6.0; // "I always add this after the last thing"
-      if (f.is_favorite) score += 2.0;
-      return { f, score };
+      const days = s?.last_at ? Math.max(0, (now - Date.parse(s.last_at)) / 86_400_000) : 999;
+      const c = {
+        seq: (seq.get(f.id) ?? 0) * 6.0, // "I always add this right after the last thing"
+        hour: Math.min(hourNear.get(f.id) ?? 0, 10) * 2.5, // logged around this time of day
+        slot: (s?.slot_count ?? 0) * 3.0, // this meal slot
+        recency: s ? 12 * Math.exp(-days / 10) : 0,
+        freq: s ? Math.min(s.total, 20) * 1.0 : 0,
+        fav: f.is_favorite ? 2.0 : 0,
+      };
+      const score = c.seq + c.hour + c.slot + c.recency + c.freq + c.fav;
+      // pick the dominant signal for a short human reason
+      const ranked = [
+        { v: c.seq, why: anchorName ? `after ${anchorName}` : undefined },
+        { v: c.hour, why: 'you usually have this now' },
+        { v: c.slot, why: slotLabel ? `often at ${slotLabel.toLowerCase()}` : undefined },
+        { v: c.recency, why: days <= 2 ? 'recent' : undefined },
+        { v: c.fav, why: f.is_favorite ? 'favorite' : undefined },
+      ].sort((a, b) => b.v - a.v);
+      const reason = ranked[0].v > 0 ? ranked[0].why : undefined;
+      return { f, reason, score };
     });
     scored.sort((a, b) => b.score - a.score || Date.parse(b.f.updated_at) - Date.parse(a.f.updated_at));
-    res.json(scored.slice(0, 40).map((x) => x.f));
+    res.json(scored.slice(0, 40).map((x) => ({ ...x.f, reason: x.reason })));
   });
 
   r.get('/barcode/:code', (req, res) => {
