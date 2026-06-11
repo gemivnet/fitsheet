@@ -66,6 +66,8 @@ export interface Food {
   fat_100g: number;
   label_photo: string | null;
   is_favorite: number;
+  pref_unit_mode: 'grams' | 'servings' | null;
+  last_grams: number | null;
 }
 
 export interface OffFood {
@@ -231,6 +233,7 @@ export interface NewLogEntry {
   protein_100g: number;
   carb_100g: number;
   fat_100g: number;
+  unit_mode?: 'grams' | 'servings' | null;
 }
 
 // ── grouped methods ─────────────────────────────────────────────────────────
@@ -246,6 +249,12 @@ export const api = {
   foods: {
     list: (q?: string) => req<Food[]>('GET', `/api/foods${q ? `?q=${encodeURIComponent(q)}` : ''}`),
     favorites: () => req<Food[]>('GET', '/api/foods?favorite=1'),
+    suggestions: (p: { slot?: string; date?: string }) => {
+      const qs = new URLSearchParams();
+      if (p.slot) qs.set('slot', p.slot);
+      if (p.date) qs.set('date', p.date);
+      return req<Food[]>('GET', `/api/foods/suggestions${qs.toString() ? `?${qs}` : ''}`);
+    },
     create: (f: Partial<Food>) => req<Food>('POST', '/api/foods', f),
     update: (id: number, p: Partial<Food>) => req<Food>('PATCH', `/api/foods/${id}`, p),
     remove: (id: number) => req('DELETE', `/api/foods/${id}`),

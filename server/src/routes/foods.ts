@@ -3,7 +3,7 @@ import { writeAudit } from '../audit';
 import type { DB } from '../db/index';
 import { nowIso } from '../util';
 
-const ALLOWED = ['name', 'brand', 'barcode', 'source', 'off_id', 'serving_g', 'serving_label', 'kcal_100g', 'protein_100g', 'carb_100g', 'fat_100g', 'label_photo', 'is_favorite'] as const;
+const ALLOWED = ['name', 'brand', 'barcode', 'source', 'off_id', 'serving_g', 'serving_label', 'kcal_100g', 'protein_100g', 'carb_100g', 'fat_100g', 'label_photo', 'is_favorite', 'pref_unit_mode', 'last_grams'] as const;
 
 export function foodsRouter(db: DB): Router {
   const r = Router();
@@ -17,6 +17,63 @@ export function foodsRouter(db: DB): Router {
     } else {
       res.json(db.prepare('SELECT * FROM foods ORDER BY is_favorite DESC, updated_at DESC LIMIT 100').all());
     }
+  });
+
+  // Smart "My foods" ordering: what she's most likely to add right now. Blends frequency,
+  // recency, the current meal slot ("breakfast foods"), favorites, and — the clever bit —
+  // what she usually logs *after* the food she just logged today (grits → brown sugar).
+  r.get('/suggestions', (req, res) => {
+    const slot = (req.query.slot as string | undefined) ?? '';
+    const date = (req.query.date as string | undefined) ?? '';
+
+    const foods = db.prepare('SELECT * FROM foods ORDER BY updated_at DESC LIMIT 200').all() as Record<string, any>[];
+    if (!foods.length) return res.json([]);
+
+    // per-food logging stats
+    const stats = db
+      .prepare(
+        'SELECT food_id, COUNT(*) AS total, MAX(created_at) AS last_at, ' +
+          'SUM(CASE WHEN meal_slot = ? THEN 1 ELSE 0 END) AS slot_count ' +
+          'FROM food_log WHERE food_id IS NOT NULL GROUP BY food_id',
+      )
+      .all(slot) as { food_id: number; total: number; last_at: string; slot_count: number }[];
+    const stat = new Map(stats.map((s) => [s.food_id, s]));
+
+    // the food she logged most recently (today) anchors the "what comes next" suggestion
+    const anchorRow = date
+      ? (db
+          .prepare("SELECT food_id FROM food_log WHERE food_id IS NOT NULL AND day_date = ? ORDER BY created_at DESC, id DESC LIMIT 1")
+          .get(date) as { food_id: number } | undefined)
+      : undefined;
+    const seq = new Map<number, number>();
+    if (anchorRow?.food_id != null) {
+      const rows = db
+        .prepare(
+          'SELECT b.food_id AS fid, COUNT(*) AS n FROM food_log a ' +
+            'JOIN food_log b ON a.day_date = b.day_date AND b.created_at > a.created_at ' +
+            'AND b.food_id IS NOT NULL AND b.food_id != a.food_id ' +
+            'WHERE a.food_id = ? GROUP BY b.food_id',
+        )
+        .all(anchorRow.food_id) as { fid: number; n: number }[];
+      for (const row of rows) seq.set(row.fid, row.n);
+    }
+
+    const now = Date.now();
+    const scored = foods.map((f) => {
+      const s = stat.get(f.id);
+      let score = 0;
+      if (s) {
+        score += Math.min(s.total, 20) * 1.0; // frequency (capped)
+        score += (s.slot_count ?? 0) * 3.0; // this meal slot — strong time-of-day signal
+        const days = s.last_at ? Math.max(0, (now - Date.parse(s.last_at)) / 86_400_000) : 999;
+        score += 10 / (1 + days); // recency
+      }
+      score += (seq.get(f.id) ?? 0) * 6.0; // "I always add this after the last thing"
+      if (f.is_favorite) score += 2.0;
+      return { f, score };
+    });
+    scored.sort((a, b) => b.score - a.score || Date.parse(b.f.updated_at) - Date.parse(a.f.updated_at));
+    res.json(scored.slice(0, 40).map((x) => x.f));
   });
 
   r.get('/barcode/:code', (req, res) => {

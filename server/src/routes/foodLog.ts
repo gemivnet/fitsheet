@@ -93,6 +93,12 @@ export function foodLogRouter(db: DB): Router {
           'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
       )
       .run(date, slot, b.food_id ?? null, b.name ?? 'Food', grams, kcal, protein, carb, fat, Date.now() % 100000, ts);
+    // Remember how this food was entered (grams vs servings) and the amount, so re-adding
+    // it pre-fills the same way. Bumping updated_at also floats it up the "My foods" list.
+    if (b.food_id != null) {
+      const um = b.unit_mode === 'servings' ? 'servings' : b.unit_mode === 'grams' ? 'grams' : null;
+      db.prepare('UPDATE foods SET pref_unit_mode = COALESCE(?, pref_unit_mode), last_grams = ?, updated_at = ? WHERE id = ?').run(um, grams, ts, b.food_id);
+    }
     writeAudit(db, { entity: 'food_log', entityId: Number(info.lastInsertRowid), action: 'create' });
     res.json(daySummary(db, date));
   });
