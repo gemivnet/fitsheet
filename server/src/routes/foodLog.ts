@@ -58,6 +58,12 @@ export function daySummary(db: DB, date: string) {
   const yIntake = intakeOn(addDaysStr(date, -1));
   const bankYesterday = yIntake == null ? null : Math.round(goal - yIntake);
 
+  // Per-meal "complete" ticks (organizational only).
+  const slotsComplete: Record<string, boolean> = { breakfast: false, lunch: false, dinner: false, snacks: false };
+  for (const r of db.prepare('SELECT meal_slot FROM meal_complete WHERE day_date = ?').all(date) as { meal_slot: string }[]) {
+    slotsComplete[r.meal_slot] = true;
+  }
+
   // She can "snooze" the bank for a single day → that day uses the plain goal.
   const snoozed = !!db.prepare('SELECT 1 FROM bank_snooze WHERE day_date = ?').get(date);
   const adjustment = s.weekly_banking && !snoozed ? clamp(bankWeek, -800, 800) : 0;
@@ -70,6 +76,7 @@ export function daySummary(db: DB, date: string) {
     remaining: Math.round(goal - totals.kcal),
     slots,
     slot_kcal: slotKcal,
+    slots_complete: slotsComplete,
     banking: s.weekly_banking,
     bank_week: bankWeek,
     bank_yesterday: bankYesterday,
@@ -95,6 +102,19 @@ export function foodLogRouter(db: DB): Router {
     if (on) db.prepare('INSERT OR IGNORE INTO bank_snooze (day_date, created_at) VALUES (?, ?)').run(date, nowIso());
     else db.prepare('DELETE FROM bank_snooze WHERE day_date = ?').run(date);
     writeAudit(db, { entity: 'bank_snooze', entityId: 0, action: on ? 'create' : 'delete', diff: { date } });
+    res.json(daySummary(db, date));
+  });
+
+  // Tick a meal complete (or un-tick) for a day.
+  r.post('/meal-complete', (req, res) => {
+    const b = (req.body ?? {}) as Record<string, any>;
+    const date = b.date || todayStr();
+    const slot = SLOTS.includes(b.meal_slot) ? b.meal_slot : null;
+    if (!slot) return res.status(400).json({ error: 'bad meal_slot' });
+    const on = b.complete !== false; // default: mark complete
+    if (on) db.prepare('INSERT OR IGNORE INTO meal_complete (day_date, meal_slot, created_at) VALUES (?, ?, ?)').run(date, slot, nowIso());
+    else db.prepare('DELETE FROM meal_complete WHERE day_date = ? AND meal_slot = ?').run(date, slot);
+    writeAudit(db, { entity: 'meal_complete', entityId: 0, action: on ? 'create' : 'delete', diff: { date, slot } });
     res.json(daySummary(db, date));
   });
 

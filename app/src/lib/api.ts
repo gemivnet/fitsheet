@@ -102,6 +102,7 @@ export interface DaySummary {
   remaining: number;
   slots: Record<string, LogEntry[]>;
   slot_kcal: Record<string, number>;
+  slots_complete: Record<string, boolean>;
   banking: boolean;
   bank_week: number;
   bank_yesterday: number | null;
@@ -272,6 +273,7 @@ export const api = {
     day: (date: string) => req<DaySummary>('GET', `/api/food-log?date=${date}`),
     add: (e: NewLogEntry) => req<DaySummary>('POST', '/api/food-log', e),
     snooze: (date: string, snoozed: boolean) => req<DaySummary>('POST', '/api/food-log/snooze', { date, snoozed }),
+    mealComplete: (date: string, meal_slot: string, complete: boolean) => req<DaySummary>('POST', '/api/food-log/meal-complete', { date, meal_slot, complete }),
     update: (id: number, p: { grams?: number; meal_slot?: string }) => req<DaySummary>('PATCH', `/api/food-log/${id}`, p),
     remove: (id: number) => req<DaySummary>('DELETE', `/api/food-log/${id}`),
   },

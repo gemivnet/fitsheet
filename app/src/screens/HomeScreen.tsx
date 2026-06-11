@@ -14,6 +14,13 @@ import type { RootTabParams } from '../navigation/types';
 
 type Nav = BottomTabNavigationProp<RootTabParams, 'Home'>;
 
+const MEALS: { key: string; label: string }[] = [
+  { key: 'breakfast', label: 'Breakfast' },
+  { key: 'lunch', label: 'Lunch' },
+  { key: 'dinner', label: 'Dinner' },
+  { key: 'snacks', label: 'Snacks' },
+];
+
 export function HomeScreen() {
   const t = useTheme();
   const nav = useNavigation<Nav>();
@@ -63,6 +70,13 @@ export function HomeScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboard'] }),
   });
 
+  const mealComplete = useMutation({
+    mutationFn: (p: { slot: string; on: boolean }) => api.foodLog.mealComplete(todayStr(), p.slot, p.on),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboard'] }),
+  });
+
+  const addTo = (slot: string) => nav.navigate('Food', { screen: 'AddFood', params: { slot, date: todayStr() } });
+
   function flash(msg: string) {
     setToast(msg);
     if (timer.current) clearTimeout(timer.current);
@@ -89,10 +103,6 @@ export function HomeScreen() {
   const remaining = banking ? today.adjusted_remaining : today.remaining;
   const over = today.totals.kcal > target;
   const goal = d.weight.goal;
-  const SLOT_LABELS: Record<string, string> = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snacks: 'Snacks' };
-  const eatenItems = (['breakfast', 'lunch', 'dinner', 'snacks'] as const).flatMap((sl) =>
-    (today.slots?.[sl] ?? []).map((it) => ({ ...it, slotLabel: SLOT_LABELS[sl] })),
-  );
 
   return (
     <View style={{ flex: 1 }}>
@@ -210,41 +220,73 @@ export function HomeScreen() {
           </View>
         </Card>
 
-        {/* today's food — the diary, surfaced where she looks first */}
+        {/* today's meals — split by time of day, each with a "complete" tick */}
         <Card pad={20} style={{ marginBottom: 16 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: eatenItems.length ? 8 : 0 }}>
-            <SectionLabel>Today&rsquo;s food</SectionLabel>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <SectionLabel>Today&rsquo;s meals</SectionLabel>
             <Pressable onPress={() => nav.navigate('Food', { screen: 'FoodDay' })} hitSlop={8}>
               <T w={800} size={13} color={t.accentPress}>
                 View day →
               </T>
             </Pressable>
           </View>
-          {eatenItems.length === 0 ? (
-            <T w={600} size={14} color={t.text3} style={{ paddingTop: 6 }}>
-              Nothing logged yet — use Quick add above.
-            </T>
-          ) : (
-            eatenItems.map((it, i) => (
-              <Pressable
-                key={it.id}
-                onPress={() => nav.navigate('Food', { screen: 'FoodDay' })}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 9, borderBottomWidth: i === eatenItems.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}
-              >
-                <View style={{ flex: 1, paddingRight: 10 }}>
-                  <T w={700} size={15} numberOfLines={1}>
-                    {it.name}
-                  </T>
-                  <T w={700} size={12} color={t.text3}>
-                    {it.slotLabel} · {Math.round(it.grams)} g
-                  </T>
+          {MEALS.map(({ key, label }, mi) => {
+            const items = today.slots?.[key] ?? [];
+            const sub = Math.round(today.slot_kcal?.[key] ?? 0);
+            const done = !!today.slots_complete?.[key];
+            return (
+              <View key={key} style={{ paddingVertical: 10, borderBottomWidth: mi === MEALS.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Pressable onPress={() => mealComplete.mutate({ slot: key, on: !done })} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1, minWidth: 0 }}>
+                    <View
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: 7,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: done ? t.success : 'transparent',
+                        borderWidth: done ? 0 : 1.8,
+                        borderColor: t.hairline,
+                      }}
+                    >
+                      {done ? <Icon name="check" size={14} stroke={3} color="#fff" /> : null}
+                    </View>
+                    <T w={800} size={15} color={done ? t.text3 : t.text}>
+                      {label}
+                    </T>
+                    {sub ? (
+                      <T num w={700} size={13} color={t.text3}>
+                        {sub} kcal
+                      </T>
+                    ) : null}
+                  </Pressable>
+                  <Pressable onPress={() => addTo(key)} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 999, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="plus" size={17} stroke={2.6} color={t.accentPress} />
+                  </Pressable>
                 </View>
-                <T num w={800} size={15}>
-                  {Math.round(it.kcal)}
-                </T>
-              </Pressable>
-            ))
-          )}
+                {items.map((it) => (
+                  <Pressable
+                    key={it.id}
+                    onPress={() => nav.navigate('Food', { screen: 'FoodDay' })}
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, paddingLeft: 31 }}
+                  >
+                    <T w={700} size={14} color={t.text2} numberOfLines={1} style={{ flex: 1, paddingRight: 10 }}>
+                      {it.name} <T w={600} size={12} color={t.text3}>· {Math.round(it.grams)} g</T>
+                    </T>
+                    <T num w={800} size={14}>
+                      {Math.round(it.kcal)}
+                    </T>
+                  </Pressable>
+                ))}
+              </View>
+            );
+          })}
+          <View style={{ marginTop: 14 }}>
+            <Button variant="soft" icon="plus" full onPress={() => addTo('snacks')}>
+              Add as snack
+            </Button>
+          </View>
         </Card>
 
         {/* weight goal + workout */}
