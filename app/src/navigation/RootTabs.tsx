@@ -4,6 +4,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, type IconName } from '../components';
 import { Font, useTheme } from '../theme';
 import {
@@ -72,13 +73,23 @@ const Tab = createBottomTabNavigator<RootTabParams>();
 
 export function RootTabs() {
   const t = useTheme();
+  // Pad the tab bar by the bottom safe-area inset so the buttons clear the iOS home indicator
+  // when the PWA runs full-screen from the home screen (otherwise they get clipped).
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: t.accent,
         tabBarInactiveTintColor: t.text3,
-        tabBarStyle: { backgroundColor: t.surface, borderTopColor: t.hairline, borderTopWidth: 1 },
+        tabBarStyle: {
+          backgroundColor: t.surface,
+          borderTopColor: t.hairline,
+          borderTopWidth: 1,
+          height: 56 + insets.bottom,
+          paddingBottom: insets.bottom + 6,
+          paddingTop: 6,
+        },
         tabBarLabelStyle: { fontFamily: Font[700], fontSize: 12 },
         tabBarIcon: ({ color, focused }) => <Icon name={TAB_ICON[route.name]} size={26} color={color} stroke={focused ? 2.4 : 2} />,
       })}

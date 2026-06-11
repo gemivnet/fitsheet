@@ -38,6 +38,11 @@ export function daySummary(db: DB, date: string) {
   for (const k of Object.keys(totals) as (keyof typeof totals)[]) totals[k] = round(totals[k], 0);
 
   // ── weekly calorie banking: roll prior over/under into today's target ──
+  // Only count a prior day if its intake looks like a real, complete log. A barely-logged
+  // day would otherwise bank a huge phantom surplus into today; an absurd over-log would
+  // trim today unfairly. Days outside a sane window are skipped (treated as a logging gap).
+  const bankLo = Math.max(500, goal * 0.4);
+  const bankHi = goal * 2.5;
   const intakeOn = (d: string): number | null => {
     const r = db.prepare('SELECT SUM(kcal) AS k FROM food_log WHERE day_date = ?').get(d) as { k: number | null };
     return r.k == null ? null : r.k;
@@ -45,12 +50,17 @@ export function daySummary(db: DB, date: string) {
   let bankWeek = 0;
   for (let i = 1; i <= 6; i++) {
     const v = intakeOn(addDaysStr(date, -i));
-    if (v != null) bankWeek += goal - v; // under = positive (headroom), over = negative
+    if (v == null) continue; // unlogged day — nothing to bank
+    if (v < bankLo || v > bankHi) continue; // insanely off — ignore (logging gap or error)
+    bankWeek += goal - v; // under = positive (headroom), over = negative
   }
   bankWeek = Math.round(bankWeek);
   const yIntake = intakeOn(addDaysStr(date, -1));
   const bankYesterday = yIntake == null ? null : Math.round(goal - yIntake);
-  const adjustment = s.weekly_banking ? clamp(bankWeek, -800, 800) : 0;
+
+  // She can "snooze" the bank for a single day → that day uses the plain goal.
+  const snoozed = !!db.prepare('SELECT 1 FROM bank_snooze WHERE day_date = ?').get(date);
+  const adjustment = s.weekly_banking && !snoozed ? clamp(bankWeek, -800, 800) : 0;
   const adjustedGoal = Math.max(1200, goal + adjustment);
 
   return {
@@ -63,6 +73,7 @@ export function daySummary(db: DB, date: string) {
     banking: s.weekly_banking,
     bank_week: bankWeek,
     bank_yesterday: bankYesterday,
+    bank_snoozed: snoozed,
     adjusted_goal: adjustedGoal,
     adjusted_remaining: Math.round(adjustedGoal - totals.kcal),
   };
@@ -73,6 +84,17 @@ export function foodLogRouter(db: DB): Router {
 
   r.get('/', (req, res) => {
     const date = (req.query.date as string) || todayStr();
+    res.json(daySummary(db, date));
+  });
+
+  // Toggle the calorie bank off (or back on) for a single day.
+  r.post('/snooze', (req, res) => {
+    const b = (req.body ?? {}) as Record<string, any>;
+    const date = b.date || todayStr();
+    const on = b.snoozed !== false; // default: snooze on
+    if (on) db.prepare('INSERT OR IGNORE INTO bank_snooze (day_date, created_at) VALUES (?, ?)').run(date, nowIso());
+    else db.prepare('DELETE FROM bank_snooze WHERE day_date = ?').run(date);
+    writeAudit(db, { entity: 'bank_snooze', entityId: 0, action: on ? 'create' : 'delete', diff: { date } });
     res.json(daySummary(db, date));
   });
 

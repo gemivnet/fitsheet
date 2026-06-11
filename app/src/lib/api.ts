@@ -104,6 +104,7 @@ export interface DaySummary {
   banking: boolean;
   bank_week: number;
   bank_yesterday: number | null;
+  bank_snoozed: boolean;
   adjusted_goal: number;
   adjusted_remaining: number;
 }
@@ -269,6 +270,7 @@ export const api = {
   foodLog: {
     day: (date: string) => req<DaySummary>('GET', `/api/food-log?date=${date}`),
     add: (e: NewLogEntry) => req<DaySummary>('POST', '/api/food-log', e),
+    snooze: (date: string, snoozed: boolean) => req<DaySummary>('POST', '/api/food-log/snooze', { date, snoozed }),
     update: (id: number, p: { grams?: number; meal_slot?: string }) => req<DaySummary>('PATCH', `/api/food-log/${id}`, p),
     remove: (id: number) => req<DaySummary>('DELETE', `/api/food-log/${id}`),
   },

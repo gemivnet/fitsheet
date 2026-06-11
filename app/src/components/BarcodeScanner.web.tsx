@@ -1,12 +1,16 @@
 // BarcodeScanner.web.tsx — live barcode scanning in the browser via ZXing + getUserMedia.
 // Works in iOS Safari, but ONLY over HTTPS (a browser rule). Renders a real <video> element,
 // which is fine inside the react-native-web build.
+//
+// The camera is started ONLY after an explicit tap. iOS standalone PWAs don't persist camera
+// permission, so auto-starting would prompt on every visit — tap-to-start keeps it intentional.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { useTheme } from '../theme';
+import { Icon } from './Icon';
 import { T } from './primitives';
 
 export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
@@ -14,9 +18,11 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
   const videoRef = useRef<any>(null);
   const controlsRef = useRef<any>(null);
   const last = useRef<{ code: string; at: number }>({ code: '', at: 0 });
+  const [started, setStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!started) return;
     let cancelled = false;
     const g: any = globalThis as any;
     if (typeof g.window !== 'undefined' && g.window.isSecureContext === false) {
@@ -51,6 +57,7 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
       } catch (e: any) {
         const msg = String(e?.message ?? e);
         setError(msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('denied') ? 'Camera permission was denied.' : 'Could not start the camera.');
+        setStarted(false);
       }
     })();
     return () => {
@@ -60,8 +67,9 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
       } catch {
         /* noop */
       }
+      controlsRef.current = null;
     };
-  }, [onScan]);
+  }, [started, onScan]);
 
   if (error) {
     return (
@@ -70,6 +78,25 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
           {error}
         </T>
       </View>
+    );
+  }
+
+  if (!started) {
+    return (
+      <Pressable
+        onPress={() => setStarted(true)}
+        style={{ height: 280, borderRadius: 20, backgroundColor: t.surface2, borderWidth: 1.5, borderColor: t.hairline, alignItems: 'center', justifyContent: 'center', gap: 12 }}
+      >
+        <View style={{ width: 64, height: 64, borderRadius: 999, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="camera" size={30} stroke={2.2} color="#fff" />
+        </View>
+        <T w={800} size={16} color={t.accentPress}>
+          Tap to start camera
+        </T>
+        <T w={600} size={13} color={t.text3} style={{ textAlign: 'center', maxWidth: 240 }}>
+          We only turn the camera on when you’re ready to scan.
+        </T>
+      </Pressable>
     );
   }
 

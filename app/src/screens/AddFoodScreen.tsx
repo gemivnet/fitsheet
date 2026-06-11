@@ -1,7 +1,7 @@
 // AddFoodScreen.tsx — My foods (smart re-add) / Search (Open Food Facts) / Scan (barcode) /
 // Describe (AI). Picking a food opens a grams/servings numpad sheet that logs it to the day.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -41,7 +41,7 @@ export function AddFoodScreen({ navigation, route }: Props) {
   const [picked, setPicked] = useState<Picked | null>(null);
 
   const add = useMutation({
-    mutationFn: async (p: { grams: number; food: Picked; mode: UnitMode }) => {
+    mutationFn: async (p: { grams: number; food: Picked; mode: UnitMode; servingG: number | null }) => {
       let foodId = p.food.food_id ?? null;
       // Save barcoded (scanned / searched) foods to the library so they're re-addable later.
       // Dedupe by barcode so re-scanning the same product never makes a duplicate.
@@ -56,7 +56,7 @@ export function AddFoodScreen({ navigation, route }: Props) {
             barcode: p.food.barcode,
             off_id: p.food.off_id ?? null,
             source: 'off',
-            serving_g: p.food.serving_g ?? null,
+            serving_g: p.servingG ?? p.food.serving_g ?? null,
             serving_label: p.food.serving_label ?? null,
             kcal_100g: p.food.kcal_100g,
             protein_100g: p.food.protein_100g,
@@ -65,6 +65,10 @@ export function AddFoodScreen({ navigation, route }: Props) {
           } as any);
           foodId = created.id;
         }
+      }
+      // Remember a serving size she set inline (so servings keep working next time).
+      if (foodId != null && p.servingG != null && p.servingG !== (p.food.serving_g ?? null)) {
+        await api.foods.update(foodId, { serving_g: p.servingG }).catch(() => {});
       }
       return api.foodLog.add({
         date,
@@ -130,7 +134,7 @@ export function AddFoodScreen({ navigation, route }: Props) {
         </Button>
       </View>
 
-      <GramsSheet picked={picked} slot={slot} onClose={() => setPicked(null)} onAdd={(grams, food, mode) => add.mutate({ grams, food, mode })} />
+      <GramsSheet picked={picked} slot={slot} onClose={() => setPicked(null)} onAdd={(grams, food, mode, servingG) => add.mutate({ grams, food, mode, servingG })} />
     </Screen>
   );
 }
@@ -181,6 +185,21 @@ function ResultRow({ name, brand, kcal100, onPress }: { name: string; brand?: st
   );
 }
 
+// Tiny typo-tolerant scorer: exact substring > all-tokens-present > subsequence. Good enough
+// to forgive misspellings in her own food library ("greek yog", "grek yogurt" → Greek yogurt).
+function fuzzyScore(query: string, target: string): number {
+  const q = query.toLowerCase().trim();
+  const s = target.toLowerCase();
+  if (!q) return 0;
+  if (s.includes(q)) return 100 + (s.startsWith(q) ? 50 : 0) - (s.length - q.length) * 0.1;
+  const toks = q.split(/\s+/).filter(Boolean);
+  if (toks.length > 1 && toks.every((tk) => s.includes(tk))) return 60;
+  let i = 0;
+  for (let j = 0; j < s.length && i < q.length; j++) if (s[j] === q[i]) i++;
+  if (i === q.length) return 30 - (s.length - q.length) * 0.05;
+  return 0;
+}
+
 function SearchTab({ onPick }: { onPick: (p: Picked) => void }) {
   const t = useTheme();
   const [text, setText] = useState('');
@@ -190,13 +209,35 @@ function SearchTab({ onPick }: { onPick: (p: Picked) => void }) {
     return () => clearTimeout(id);
   }, [text]);
   const results = useQuery({ queryKey: ['off', q], queryFn: () => api.off.search(q), enabled: q.length >= 2 });
+  const mine = useQuery({ queryKey: ['foods', 'all'], queryFn: () => api.foods.list() });
+
+  // Fuzzy-match her saved foods locally so typos still find her stuff, shown above OFF results.
+  const localMatches = useMemo(() => {
+    if (q.length < 2 || !mine.data) return [];
+    return mine.data
+      .map((f) => ({ f, score: fuzzyScore(q, `${f.name} ${f.brand ?? ''}`) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6)
+      .map((x) => x.f);
+  }, [q, mine.data]);
 
   return (
     <View>
       <TextField label="Search foods" value={text} onChangeText={setText} placeholder="e.g. greek yogurt" autoFocus />
       {q.length >= 2 ? (
         <>
-          <SectionLabel style={{ marginBottom: 10 }}>Results · per 100 g</SectionLabel>
+          {localMatches.length ? (
+            <>
+              <SectionLabel style={{ marginBottom: 10 }}>Your foods</SectionLabel>
+              <Card pad={6} style={{ marginBottom: 16 }}>
+                {localMatches.map((f) => (
+                  <ResultRow key={`mine-${f.id}`} name={f.name} brand={f.brand} kcal100={f.kcal_100g} onPress={() => onPick(foodToPicked(f))} />
+                ))}
+              </Card>
+            </>
+          ) : null}
+          <SectionLabel style={{ marginBottom: 10 }}>Open Food Facts · per 100 g</SectionLabel>
           {results.isLoading ? (
             <T w={700} color={t.text3} style={{ padding: 8 }}>
               Searching…
@@ -207,6 +248,10 @@ function SearchTab({ onPick }: { onPick: (p: Picked) => void }) {
                 <ResultRow key={`${r.barcode}-${i}`} name={r.name} brand={r.brand} kcal100={r.kcal_100g} onPress={() => onPick(offToPicked(r))} />
               ))}
             </Card>
+          ) : localMatches.length ? (
+            <T w={700} color={t.text3} style={{ padding: 8 }}>
+              No other matches online.
+            </T>
           ) : (
             <T w={700} color={t.text3} style={{ padding: 8 }}>
               No matches — try the AI label capture below.
@@ -215,7 +260,7 @@ function SearchTab({ onPick }: { onPick: (p: Picked) => void }) {
         </>
       ) : (
         <T w={600} size={14} color={t.text3} style={{ padding: 8 }}>
-          Type at least 2 letters to search Open Food Facts.
+          Type at least 2 letters to search your foods + Open Food Facts.
         </T>
       )}
     </View>
@@ -414,48 +459,61 @@ function GramsSheet({
   picked: Picked | null;
   slot: string;
   onClose: () => void;
-  onAdd: (grams: number, food: Picked, mode: UnitMode) => void;
+  onAdd: (grams: number, food: Picked, mode: UnitMode, servingG: number | null) => void;
 }) {
   const t = useTheme();
-  const sv = picked?.serving_g && picked.serving_g > 0 ? picked.serving_g : null;
-  const canServings = sv != null;
   const [mode, setMode] = useState<UnitMode>('grams');
   const [entry, setEntry] = useState('100');
-  // "fresh" = the shown value is a pre-fill; the first keypress replaces it (start typing instantly).
+  const [svEntry, setSvEntry] = useState(''); // grams per serving (may be unset)
+  const [field, setField] = useState<'amount' | 'serving'>('amount'); // what the numpad edits
+  // "fresh" = the active field shows a pre-fill; the first keypress replaces it (start typing instantly).
   const [fresh, setFresh] = useState(true);
 
   useEffect(() => {
     if (!picked) return;
-    const svLocal = picked.serving_g && picked.serving_g > 0 ? picked.serving_g : null;
-    const startMode: UnitMode = svLocal && picked.pref_unit_mode === 'servings' ? 'servings' : 'grams';
+    const sg = picked.serving_g && picked.serving_g > 0 ? picked.serving_g : null;
+    const startMode: UnitMode = sg && picked.pref_unit_mode === 'servings' ? 'servings' : 'grams';
     const startGrams = picked.last_grams ?? picked.serving_g ?? 100;
     setMode(startMode);
-    setEntry(startMode === 'servings' && svLocal ? trimNum(startGrams / svLocal) : trimNum(startGrams));
+    setSvEntry(sg != null ? trimNum(sg) : '');
+    setField('amount');
+    setEntry(startMode === 'servings' && sg ? trimNum(startGrams / sg) : trimNum(startGrams));
     setFresh(true);
   }, [picked]);
 
   if (!picked) return null;
 
-  const n = Number(entry) || 0;
-  const grams = mode === 'servings' && sv ? n * sv : n;
-  const servings = sv ? grams / sv : null;
+  const svNum = Number(svEntry) > 0 ? Number(svEntry) : null;
+  const canServings = svNum != null;
+  const effMode: UnitMode = canServings ? mode : 'grams';
+  const amt = Number(entry) || 0;
+  const grams = effMode === 'servings' && svNum ? amt * svNum : amt;
+  const servings = svNum ? grams / svNum : null;
   const kcal = Math.round((picked.kcal_100g * grams) / 100);
   const units = parseServingUnits(picked.serving_label);
 
+  const apply = (cur: string, key: string): string => {
+    if (key === 'back') return fresh || cur.length <= 1 ? '0' : cur.slice(0, -1);
+    const base = fresh || cur === '0' ? '' : cur;
+    if (key === '.') return base.includes('.') ? base : `${base === '' ? '0' : base}.`;
+    const next = base + key;
+    return next.length > 7 ? base : next;
+  };
   const press = (key: string) => {
-    setEntry((cur) => {
-      if (key === 'back') return fresh || cur.length <= 1 ? '0' : cur.slice(0, -1);
-      const base = fresh || cur === '0' ? '' : cur;
-      if (key === '.') return base.includes('.') ? base : `${base === '' ? '0' : base}.`;
-      const next = base + key;
-      return next.length > 7 ? base : next;
-    });
+    if (field === 'serving') setSvEntry((c) => apply(c, key));
+    else setEntry((c) => apply(c, key));
     setFresh(false);
   };
 
-  const switchMode = (m: UnitMode) => {
-    if (m === mode || (m === 'servings' && !sv)) return;
-    setEntry(m === 'servings' && sv ? trimNum(grams / sv) : trimNum(grams));
+  // Tap a tile to choose what unit you're entering the amount in.
+  const pickAmount = (m: UnitMode) => {
+    if (m === 'servings' && !canServings) {
+      setField('serving'); // no serving size yet — set it first
+      setFresh(true);
+      return;
+    }
+    setField('amount');
+    if (m !== mode) setEntry(m === 'servings' && svNum ? trimNum(grams / svNum) : trimNum(grams));
     setMode(m);
     setFresh(false);
   };
@@ -469,27 +527,43 @@ function GramsSheet({
       ) : null}
 
       {/* Grams + Servings shown together so you can cross-check; tap either to switch entry mode. */}
-      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
-        <StatTile label="Grams" value={`${trimNum(grams)}`} unit="g" active={mode === 'grams'} onPress={() => switchMode('grams')} />
-        {canServings ? (
-          <StatTile
-            label="Servings"
-            value={servings != null ? trimNum(servings) : '—'}
-            unit={units ? '' : 'serv'}
-            sub={units ? `≈ ${trimNum((servings ?? 0) * units.per)} ${units.unit}` : undefined}
-            active={mode === 'servings'}
-            onPress={() => switchMode('servings')}
-          />
-        ) : null}
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+        <StatTile label="Grams" value={trimNum(grams)} unit="g" active={field === 'amount' && effMode === 'grams'} onPress={() => pickAmount('grams')} />
+        <StatTile
+          label="Servings"
+          value={canServings ? (servings != null ? trimNum(servings) : '—') : 'Set'}
+          unit={canServings && !units ? 'serv' : ''}
+          sub={canServings ? (units ? `≈ ${trimNum((servings ?? 0) * units.per)} ${units.unit}` : undefined) : 'tap to size'}
+          active={field === 'amount' && effMode === 'servings'}
+          onPress={() => pickAmount('servings')}
+        />
       </View>
 
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+      {/* Serving-size editor — always available, so servings work for any food (Aldi sausage = X g). */}
+      <Pressable
+        onPress={() => {
+          setField('serving');
+          setFresh(true);
+        }}
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 11, paddingHorizontal: 14, borderRadius: 12, marginBottom: 12, backgroundColor: field === 'serving' ? t.accentSoft : t.surface2, borderWidth: 1.5, borderColor: field === 'serving' ? t.accent : t.hairline }}
+      >
+        <T w={700} size={14} color={t.text2}>
+          1 serving =
+        </T>
+        <T w={800} size={15} color={field === 'serving' ? t.accentPress : t.text}>
+          {svNum != null ? `${trimNum(svNum)} g` : 'tap to set'}
+        </T>
+      </Pressable>
+
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
         <T w={700} size={15} color={t.text2}>
-          {canServings ? `Entering ${mode}` : "That's"}
+          {field === 'serving' ? 'Grams in one serving' : `Entering ${effMode}`}
         </T>
-        <T num w={800} size={26} color={t.accentPress}>
-          {kcal} kcal
-        </T>
+        {field === 'serving' ? null : (
+          <T num w={800} size={26} color={t.accentPress}>
+            {kcal} kcal
+          </T>
+        )}
       </View>
 
       {/* On-screen numpad — no system keyboard, so it works the same on iPad and phone. */}
@@ -521,9 +595,15 @@ function GramsSheet({
         ))}
       </View>
 
-      <Button full size="lg" icon="check" onPress={() => onAdd(grams, picked, mode)}>
-        Add to {slot}
-      </Button>
+      {field === 'serving' ? (
+        <Button full size="lg" icon="check" onPress={() => { setField('amount'); setFresh(false); }}>
+          Set serving size
+        </Button>
+      ) : (
+        <Button full size="lg" icon="check" onPress={() => onAdd(grams, picked, effMode, svNum)}>
+          Add to {slot}
+        </Button>
+      )}
     </Sheet>
   );
 }

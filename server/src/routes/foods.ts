@@ -39,6 +39,19 @@ export function foodsRouter(db: DB): Router {
       .all(slot) as { food_id: number; total: number; last_at: string; slot_count: number }[];
     const stat = new Map(stats.map((s) => [s.food_id, s]));
 
+    // Food × time-of-day correlation: how often each food is logged within ±2h of *now*
+    // (everything in UTC, so it's internally consistent and stores no timezone). This sharpens
+    // "what I usually eat around this time" beyond the coarse meal-slot signal.
+    const nowHour = new Date().getUTCHours();
+    const hourRows = db
+      .prepare(
+        "SELECT food_id, COUNT(*) AS near FROM food_log WHERE food_id IS NOT NULL AND " +
+          "MIN((24 + CAST(strftime('%H', created_at) AS INTEGER) - ?) % 24, (24 + ? - CAST(strftime('%H', created_at) AS INTEGER)) % 24) <= 2 " +
+          "GROUP BY food_id",
+      )
+      .all(nowHour, nowHour) as { food_id: number; near: number }[];
+    const hourNear = new Map(hourRows.map((h) => [h.food_id, h.near]));
+
     // the food she logged most recently (today) anchors the "what comes next" suggestion
     const anchorRow = date
       ? (db
@@ -68,6 +81,7 @@ export function foodsRouter(db: DB): Router {
         const days = s.last_at ? Math.max(0, (now - Date.parse(s.last_at)) / 86_400_000) : 999;
         score += 10 / (1 + days); // recency
       }
+      score += Math.min(hourNear.get(f.id) ?? 0, 10) * 2.5; // logged around this time of day
       score += (seq.get(f.id) ?? 0) * 6.0; // "I always add this after the last thing"
       if (f.is_favorite) score += 2.0;
       return { f, score };

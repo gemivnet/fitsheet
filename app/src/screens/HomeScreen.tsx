@@ -58,6 +58,11 @@ export function HomeScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboard'] }),
   });
 
+  const snooze = useMutation({
+    mutationFn: (on: boolean) => api.foodLog.snooze(todayStr(), on),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboard'] }),
+  });
+
   function flash(msg: string) {
     setToast(msg);
     if (timer.current) clearTimeout(timer.current);
@@ -135,53 +140,29 @@ export function HomeScreen() {
             <MacroBar label="Carbs" value={Math.round(today.totals.carb)} goal={s.carb_goal_g} varName="carb" />
             <MacroBar label="Fat" value={Math.round(today.totals.fat)} goal={s.fat_goal_g} varName="fat" />
           </View>
-          {banking && today.bank_week !== 0 ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 }}>
-              <Icon name={today.bank_week > 0 ? 'trend' : 'flame'} size={14} stroke={2.4} color={today.bank_week > 0 ? t.success : t.caution} />
-              <T w={700} size={13} color={t.text2}>
-                {today.bank_week > 0
-                  ? `+${today.bank_week} banked this week — folded into today`
-                  : `${Math.abs(today.bank_week)} over this week — trimmed from today`}
-              </T>
-            </View>
-          ) : null}
-        </Card>
-
-        {/* today's food — the diary, surfaced where she looks first */}
-        <Card pad={20} style={{ marginBottom: 16 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: eatenItems.length ? 8 : 0 }}>
-            <SectionLabel>Today&rsquo;s food</SectionLabel>
-            <Pressable onPress={() => nav.navigate('Food')} hitSlop={8}>
-              <T w={800} size={13} color={t.accentPress}>
-                View day →
-              </T>
-            </Pressable>
-          </View>
-          {eatenItems.length === 0 ? (
-            <T w={600} size={14} color={t.text3} style={{ paddingTop: 6 }}>
-              Nothing logged yet — use Search or Describe below.
-            </T>
-          ) : (
-            eatenItems.map((it, i) => (
+          {banking && (today.bank_week !== 0 || today.bank_snoozed) ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <Icon name={today.bank_snoozed ? 'bell' : today.bank_week > 0 ? 'trend' : 'flame'} size={14} stroke={2.4} color={today.bank_snoozed ? t.text3 : today.bank_week > 0 ? t.success : t.caution} />
+                <T w={700} size={13} color={t.text2}>
+                  {today.bank_snoozed
+                    ? 'Bank paused today — using your plain goal'
+                    : today.bank_week > 0
+                      ? `+${today.bank_week} banked this week — folded into today`
+                      : `${Math.abs(today.bank_week)} over this week — trimmed from today`}
+                </T>
+              </View>
               <Pressable
-                key={it.id}
-                onPress={() => nav.navigate('Food')}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 9, borderBottomWidth: i === eatenItems.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}
+                onPress={() => snooze.mutate(!today.bank_snoozed)}
+                hitSlop={8}
+                style={{ paddingVertical: 5, paddingHorizontal: 11, borderRadius: 999, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.hairline }}
               >
-                <View style={{ flex: 1, paddingRight: 10 }}>
-                  <T w={700} size={15} numberOfLines={1}>
-                    {it.name}
-                  </T>
-                  <T w={700} size={12} color={t.text3}>
-                    {it.slotLabel} · {Math.round(it.grams)} g
-                  </T>
-                </View>
-                <T num w={800} size={15}>
-                  {Math.round(it.kcal)}
+                <T w={800} size={12} color={t.accentPress}>
+                  {today.bank_snoozed ? 'Undo' : 'Snooze'}
                 </T>
               </Pressable>
-            ))
-          )}
+            </View>
+          ) : null}
         </Card>
 
         {/* quick add (favorites) */}
@@ -227,6 +208,43 @@ export function HomeScreen() {
               Scan
             </Button>
           </View>
+        </Card>
+
+        {/* today's food — the diary, surfaced where she looks first */}
+        <Card pad={20} style={{ marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: eatenItems.length ? 8 : 0 }}>
+            <SectionLabel>Today&rsquo;s food</SectionLabel>
+            <Pressable onPress={() => nav.navigate('Food', { screen: 'FoodDay' })} hitSlop={8}>
+              <T w={800} size={13} color={t.accentPress}>
+                View day →
+              </T>
+            </Pressable>
+          </View>
+          {eatenItems.length === 0 ? (
+            <T w={600} size={14} color={t.text3} style={{ paddingTop: 6 }}>
+              Nothing logged yet — use Quick add above.
+            </T>
+          ) : (
+            eatenItems.map((it, i) => (
+              <Pressable
+                key={it.id}
+                onPress={() => nav.navigate('Food', { screen: 'FoodDay' })}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 9, borderBottomWidth: i === eatenItems.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}
+              >
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <T w={700} size={15} numberOfLines={1}>
+                    {it.name}
+                  </T>
+                  <T w={700} size={12} color={t.text3}>
+                    {it.slotLabel} · {Math.round(it.grams)} g
+                  </T>
+                </View>
+                <T num w={800} size={15}>
+                  {Math.round(it.kcal)}
+                </T>
+              </Pressable>
+            ))
+          )}
         </Card>
 
         {/* weight goal + workout */}

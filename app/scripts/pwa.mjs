@@ -101,9 +101,9 @@ const manifest = {
 writeFileSync(join(DIST, 'manifest.webmanifest'), JSON.stringify(manifest, null, 2));
 
 // ── service worker (cache the shell; never cache /api) ───────────────────────
-const sw = `const C='fitsheet-v1';
+const sw = `const C='fitsheet-v2';
 self.addEventListener('install',e=>self.skipWaiting());
-self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
+self.addEventListener('activate',e=>e.waitUntil((async()=>{const ks=await caches.keys();await Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)));await self.clients.claim();})()));
 self.addEventListener('fetch',e=>{
   if(e.request.method!=='GET') return;
   const u=new URL(e.request.url);
@@ -128,8 +128,15 @@ const head = `  <link rel="manifest" href="/manifest.webmanifest" />
 `;
 const htmlPath = join(DIST, 'index.html');
 let html = readFileSync(htmlPath, 'utf8');
+// Opt the viewport into the safe-area insets so iOS standalone (home-screen) mode reports
+// env(safe-area-inset-*) — without this the bottom tab bar sits under the home indicator.
+if (/<meta name="viewport"/i.test(html)) {
+  html = html.replace(/<meta name="viewport"[^>]*>/i, '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />');
+} else {
+  html = html.replace('<head>', '<head>\n  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />');
+}
 if (!html.includes('manifest.webmanifest')) {
   html = html.replace('</head>', `${head}</head>`);
-  writeFileSync(htmlPath, html);
 }
+writeFileSync(htmlPath, html);
 console.log('[pwa] manifest + service worker + meta injected. PWA ready in dist/.');
