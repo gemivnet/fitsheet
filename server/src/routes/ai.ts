@@ -76,6 +76,12 @@ export function aiRouter(db: DB): Router {
           'INSERT INTO restaurant_menu (restaurant, query, name, components_json, created_at, updated_at) VALUES (?,?,?,?,?,?) ' +
             'ON CONFLICT(restaurant, query) DO UPDATE SET name=excluded.name, components_json=excluded.components_json, updated_at=excluded.updated_at',
         ).run(restaurant, query, parsed.name, JSON.stringify(parsed.components), ts, ts);
+        // grow the reusable component library — INSERT OR IGNORE so her edits are never clobbered
+        const ins = db.prepare(
+          'INSERT OR IGNORE INTO restaurant_components (restaurant,name,category,grams,kcal,protein_g,carb_g,fat_g,default_on,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+        );
+        let order = 0;
+        for (const c of parsed.components) ins.run(restaurant, c.name, c.category, c.grams, c.kcal, c.protein_g, c.carb_g, c.fat_g, c.default_on ? 1 : 0, order++, ts, ts);
       }
       res.json({ item: parsed, cached: false });
     } catch (e) {

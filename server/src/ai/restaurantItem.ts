@@ -6,6 +6,7 @@ import { claudeText, extractJson } from './client';
 
 export interface RestaurantComponent {
   name: string;
+  category: string;
   grams: number;
   kcal: number;
   protein_g: number;
@@ -30,13 +31,14 @@ export async function restaurantItem(restaurant: string, item: string): Promise<
       'and add-on as a separate line. For one standard portion as served, give the published calories and ' +
       'protein/carb/fat in grams, plus the portion weight in grams. Mark components typically included by ' +
       'default with default_on:true, and optional add-ons (guac, chips, extra cheese, large size, etc.) ' +
-      'false. Only include parts of this order plus what it standardly comes with — never invent unrelated ' +
-      'items. If a value is genuinely not published, give your best estimate but keep it realistic.',
+      'false. Give each component a category from: base, protein, beans, topping, salsa, cheese, side, ' +
+      'sauce, other. Only include parts of this order plus what it standardly comes with — never invent ' +
+      'unrelated items. If a value is genuinely not published, give your best estimate but keep it realistic.',
     content:
       `Restaurant: ${restaurant}\nOrder: ${item}\n\n` +
       'Reply ONLY JSON, no prose: ' +
-      '{"name": string, "components": [{"name": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}], "note": string}',
-    maxTokens: 1400,
+      '{"name": string, "components": [{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}], "note": string}',
+    maxTokens: 1500,
   });
   const obj = extractJson<RestaurantItem>(out);
   if (!obj || !Array.isArray(obj.components)) return null;
@@ -44,6 +46,7 @@ export async function restaurantItem(restaurant: string, item: string): Promise<
     .filter((c) => c && c.name && Number.isFinite(Number(c.kcal)))
     .map((c) => ({
       name: String(c.name),
+      category: String(c.category || 'other').toLowerCase(),
       grams: Math.max(0, Math.round(Number(c.grams) || 0)),
       kcal: Math.max(0, Math.round(Number(c.kcal) || 0)),
       protein_g: Math.max(0, Math.round(Number(c.protein_g) || 0)),

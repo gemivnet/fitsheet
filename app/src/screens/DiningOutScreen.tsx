@@ -1,13 +1,14 @@
-// DiningOutScreen.tsx — log a fast-food / restaurant meal. Pick a place, re-log a saved order, or
-// have the AI pull the chain's published nutrition and break the order into toggleable components
-// ("build your item"). Parses are cached locally, and everything logged here is tagged "eating out".
+// DiningOutScreen.tsx — log a fast-food / restaurant meal from an editable, per-restaurant menu of
+// build-your-own parts. The AI seeds the menu with the chain's published nutrition; you assemble an
+// order by ticking parts at light / normal / extra, edit values locally, and log it (tagged "eating
+// out"). Saved orders re-log in one tap and also live in My foods.
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, Icon, Screen, SectionLabel, T, TextField } from '../components';
-import { api, type Food, type RestaurantItem } from '../lib/api';
+import { applyNumberKey, Button, Card, Chip, Icon, NumberField, NumberPad, Screen, SectionLabel, Sheet, T, TextField } from '../components';
+import { api, type Food, type MenuComponent, type RestaurantComponent } from '../lib/api';
 import { notify } from '../lib/dialog';
 import { useTheme } from '../theme';
 import type { FoodStackParams } from '../navigation/types';
@@ -19,6 +20,15 @@ const MEALS: { key: string; label: string }[] = [
   { key: 'snacks', label: 'Snacks' },
 ];
 
+type Level = 'light' | 'normal' | 'extra';
+const MULT: Record<Level, number> = { light: 0.5, normal: 1, extra: 2 };
+const CAT_ORDER = ['base', 'protein', 'beans', 'topping', 'salsa', 'cheese', 'side', 'sauce', 'other'];
+const catRank = (c?: string | null) => {
+  const i = CAT_ORDER.indexOf((c || 'other').toLowerCase());
+  return i < 0 ? CAT_ORDER.length : i;
+};
+const norm = (s: string) => s.toLowerCase().trim();
+
 type Props = NativeStackScreenProps<FoodStackParams, 'DiningOut'>;
 
 export function DiningOutScreen({ navigation, route }: Props) {
@@ -28,45 +38,79 @@ export function DiningOutScreen({ navigation, route }: Props) {
   const [slot, setSlot] = useState(route.params.slot);
   const [restaurant, setRestaurant] = useState('');
   const [item, setItem] = useState('');
-  const [built, setBuilt] = useState<RestaurantItem | null>(null);
-  const [on, setOn] = useState<boolean[]>([]);
   const [orderName, setOrderName] = useState('');
+  const [sel, setSel] = useState<Record<number, Level>>({});
+  const [pending, setPending] = useState<{ name: string; on: boolean }[] | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editing, setEditing] = useState<MenuComponent | 'new' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const rest = restaurant.trim();
   const restaurants = useQuery({ queryKey: ['restaurants'], queryFn: api.foods.restaurants });
   const saved = useQuery({ queryKey: ['dining', rest], queryFn: () => api.foods.dining(rest), enabled: rest.length > 0 });
-  const menu = useQuery({ queryKey: ['restaurant-menu', rest], queryFn: () => api.ai.restaurantMenu(rest), enabled: rest.length > 0 });
+  const menu = useQuery({ queryKey: ['restaurant-components', rest], queryFn: () => api.restaurants.components(rest), enabled: rest.length > 0 });
+  const cached = useQuery({ queryKey: ['restaurant-menu', rest], queryFn: () => api.ai.restaurantMenu(rest), enabled: rest.length > 0 });
 
-  const load = (ri: RestaurantItem) => {
-    setBuilt(ri);
-    setOn(ri.components.map((c) => c.default_on));
-    setOrderName(ri.name);
-    setError(null);
-  };
+  // resolve a pending name-based selection once the component menu is loaded
+  useEffect(() => {
+    if (!pending || !menu.data) return;
+    const byName = new Map(menu.data.map((c) => [norm(c.name), c.id]));
+    const next: Record<number, Level> = {};
+    for (const p of pending) {
+      const id = byName.get(norm(p.name));
+      if (id != null && p.on) next[id] = 'normal';
+    }
+    setSel(next);
+    setPending(null);
+  }, [pending, menu.data]);
 
   const build = useMutation({
     mutationFn: () => api.ai.restaurantItem(rest, item.trim()),
     onSuccess: (out) => {
       if (!out.item) {
         setError(out.error === 'no_api_key' ? 'AI is off — add ANTHROPIC_API_KEY on the server.' : 'Couldn’t build that — try naming the item differently.');
-        setBuilt(null);
         return;
       }
-      load(out.item);
+      setError(null);
+      setOrderName(out.item.name);
+      qc.invalidateQueries({ queryKey: ['restaurant-components', rest] });
       qc.invalidateQueries({ queryKey: ['restaurant-menu', rest] });
+      setPending(out.item.components.map((c: RestaurantComponent) => ({ name: c.name, on: c.default_on })));
     },
     onError: (e: any) => setError(e?.status === 503 ? 'AI is off — add ANTHROPIC_API_KEY on the server.' : 'Couldn’t reach the server.'),
   });
 
+  const loadCached = (name: string, comps: RestaurantComponent[]) => {
+    setOrderName(name);
+    setError(null);
+    setPending(comps.map((c) => ({ name: c.name, on: c.default_on })));
+  };
+
+  const groups = useMemo(() => {
+    const list = (menu.data ?? []).slice().sort((a, b) => catRank(a.category) - catRank(b.category) || a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    const out: { cat: string; items: MenuComponent[] }[] = [];
+    for (const c of list) {
+      const cat = (c.category || 'other').toLowerCase();
+      const g = out.find((x) => x.cat === cat) ?? (out.push({ cat, items: [] }), out[out.length - 1]);
+      g.items.push(c);
+    }
+    return out;
+  }, [menu.data]);
+
   const totals = useMemo(() => {
     const base = { grams: 0, kcal: 0, protein: 0, carb: 0, fat: 0 };
-    if (!built) return base;
-    return built.components.reduce(
-      (a, c, i) => (on[i] ? { grams: a.grams + c.grams, kcal: a.kcal + c.kcal, protein: a.protein + c.protein_g, carb: a.carb + c.carb_g, fat: a.fat + c.fat_g } : a),
-      base,
-    );
-  }, [built, on]);
+    for (const c of menu.data ?? []) {
+      const lvl = sel[c.id];
+      if (!lvl) continue;
+      const m = MULT[lvl];
+      base.grams += c.grams * m;
+      base.kcal += c.kcal * m;
+      base.protein += c.protein_g * m;
+      base.carb += c.carb_g * m;
+      base.fat += c.fat_g * m;
+    }
+    return base;
+  }, [menu.data, sel]);
 
   const macros100 = {
     kcal_100g: totals.grams > 0 ? Math.round((totals.kcal / totals.grams) * 100) : 0,
@@ -75,10 +119,19 @@ export function DiningOutScreen({ navigation, route }: Props) {
     fat_100g: totals.grams > 0 ? Math.round((totals.fat / totals.grams) * 1000) / 10 : 0,
   };
   const canLog = totals.kcal > 0 && totals.grams > 0;
+  const name = () => `${rest}${orderName ? ` · ${orderName}` : ''}`;
 
-  const logBuilt = async () => {
+  const toggle = (id: number) =>
+    setSel((s) => {
+      const n = { ...s };
+      if (n[id]) delete n[id];
+      else n[id] = 'normal';
+      return n;
+    });
+
+  const logOrder = async () => {
     if (!canLog) return;
-    await api.foodLog.add({ date, meal_slot: slot, name: `${rest} · ${orderName}`, grams: totals.grams, eating_out: 1, ...macros100 });
+    await api.foodLog.add({ date, meal_slot: slot, name: name(), grams: Math.round(totals.grams), eating_out: 1, ...macros100 });
     qc.invalidateQueries({ queryKey: ['foodlog', date] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     navigation.goBack();
@@ -86,11 +139,11 @@ export function DiningOutScreen({ navigation, route }: Props) {
   const saveOrder = async () => {
     if (!canLog) return;
     await api.foods.create({
-      name: orderName || item.trim() || 'Order',
+      name: orderName || `${rest} order`,
       restaurant: rest,
       eating_out: 1,
       source: 'dining',
-      serving_g: totals.grams,
+      serving_g: Math.round(totals.grams),
       unit_name: 'order',
       is_favorite: 1,
       ...macros100,
@@ -132,7 +185,6 @@ export function DiningOutScreen({ navigation, route }: Props) {
         </Pressable>
       </View>
 
-      {/* meal */}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
         {MEALS.map((m) => (
           <Chip key={m.key} active={slot === m.key} onPress={() => setSlot(m.key)}>
@@ -141,21 +193,23 @@ export function DiningOutScreen({ navigation, route }: Props) {
         ))}
       </View>
 
-      {/* restaurant */}
       <TextField label="Restaurant" value={restaurant} onChangeText={setRestaurant} placeholder="e.g. Chipotle, McDonald's" autoFocus />
       {restaurants.data && restaurants.data.length ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: -4, marginBottom: 14 }}>
           {restaurants.data.map((r) => (
-            <Chip key={r.restaurant} active={rest.toLowerCase() === r.restaurant.toLowerCase()} onPress={() => setRestaurant(r.restaurant)}>
+            <Chip key={r.restaurant} active={norm(rest) === norm(r.restaurant)} onPress={() => setRestaurant(r.restaurant)}>
               {r.restaurant}
             </Chip>
           ))}
         </View>
       ) : null}
 
-      {rest.length > 0 ? (
+      {rest.length === 0 ? (
+        <T w={600} size={14} color={t.text3} style={{ padding: 8 }}>
+          Pick a restaurant to see its menu, your saved orders, or build a new one.
+        </T>
+      ) : (
         <>
-          {/* saved orders */}
           {saved.data && saved.data.length ? (
             <View style={{ marginBottom: 16 }}>
               <SectionLabel style={{ marginBottom: 10 }}>Saved orders</SectionLabel>
@@ -179,54 +233,106 @@ export function DiningOutScreen({ navigation, route }: Props) {
             </View>
           ) : null}
 
-          {/* build an item with the AI / cached menu */}
-          <SectionLabel style={{ marginBottom: 10 }}>Build an item</SectionLabel>
-          <TextField label={undefined} value={item} onChangeText={setItem} placeholder="What are you getting? e.g. chicken burrito bowl" />
-          <Button full icon="star" onPress={() => build.mutate()}>
-            {build.isPending ? 'Pulling nutrition…' : 'Build it'}
-          </Button>
-
-          {menu.data && menu.data.length ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-              {menu.data.map((m) => (
-                <Chip key={m.id} icon="food" onPress={() => load(m)}>
+          {/* build via AI */}
+          <SectionLabel style={{ marginBottom: 10 }}>Build an order</SectionLabel>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end', marginBottom: 4 }}>
+            <View style={{ flex: 1 }}>
+              <TextField label={undefined} value={item} onChangeText={setItem} placeholder="What are you getting? e.g. chicken bowl" />
+            </View>
+            <View style={{ marginBottom: 14 }}>
+              <Button icon="star" onPress={() => build.mutate()}>
+                {build.isPending ? '…' : 'Build'}
+              </Button>
+            </View>
+          </View>
+          {cached.data && cached.data.length ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+              {cached.data.map((m) => (
+                <Chip key={m.id} icon="food" onPress={() => loadCached(m.name, m.components)}>
                   {m.name}
                 </Chip>
               ))}
             </View>
           ) : null}
-
           {error ? (
-            <T w={700} size={14} color={t.caution} style={{ marginTop: 12 }}>
+            <T w={700} size={14} color={t.caution} style={{ marginBottom: 8 }}>
               {error}
             </T>
           ) : null}
 
-          {built ? (
-            <View style={{ marginTop: 16 }}>
+          {/* the editable component menu */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 10 }}>
+            <SectionLabel>Menu</SectionLabel>
+            <Pressable onPress={() => setEditMode((v) => !v)} hitSlop={8}>
+              <T w={800} size={13} color={t.accentPress}>
+                {editMode ? 'Done editing' : 'Edit menu'}
+              </T>
+            </Pressable>
+          </View>
+
+          {menu.data && menu.data.length === 0 && !menu.isLoading ? (
+            <T w={600} size={14} color={t.text3} style={{ padding: 8 }}>
+              No menu yet — “Build an order” above and the AI fills this in, or add items by hand.
+            </T>
+          ) : null}
+
+          {groups.map((g) => (
+            <View key={g.cat} style={{ marginBottom: 10 }}>
+              <T w={800} size={11} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6, marginLeft: 4 }}>
+                {g.cat}
+              </T>
               <Card pad={6}>
-                {built.components.map((c, i) => (
-                  <Pressable
-                    key={i}
-                    onPress={() => setOn((xs) => xs.map((v, idx) => (idx === i ? !v : v)))}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderBottomWidth: i === built.components.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}
-                  >
-                    <View style={{ width: 24, height: 24, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: on[i] ? t.accent : 'transparent', borderWidth: on[i] ? 0 : 1.8, borderColor: t.hairline }}>
-                      {on[i] ? <Icon name="check" size={15} stroke={3} color="#fff" /> : null}
-                    </View>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <T w={700} size={15} color={on[i] ? t.text : t.text3} numberOfLines={1}>
-                        {c.name}
+                {g.items.map((c, i) => {
+                  const lvl = sel[c.id];
+                  const on = !!lvl;
+                  const mult = on ? MULT[lvl] : 1;
+                  const last = i === g.items.length - 1;
+                  if (editMode) {
+                    return (
+                      <Pressable key={c.id} onPress={() => setEditing(c)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderBottomWidth: last ? 0 : 1, borderBottomColor: t.hairline }}>
+                        <Icon name="edit" size={18} color={t.text3} />
+                        <T w={700} size={15} style={{ flex: 1 }} numberOfLines={1}>
+                          {c.name}
+                        </T>
+                        <T num w={700} size={14} color={t.text3}>
+                          {Math.round(c.kcal)} kcal · {Math.round(c.grams)} g
+                        </T>
+                      </Pressable>
+                    );
+                  }
+                  return (
+                    <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: last ? 0 : 1, borderBottomColor: t.hairline }}>
+                      <Pressable onPress={() => toggle(c.id)} hitSlop={6}>
+                        <View style={{ width: 24, height: 24, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.accent : 'transparent', borderWidth: on ? 0 : 1.8, borderColor: t.hairline }}>
+                          {on ? <Icon name="check" size={15} stroke={3} color="#fff" /> : null}
+                        </View>
+                      </Pressable>
+                      <Pressable onPress={() => toggle(c.id)} style={{ flex: 1, minWidth: 0 }}>
+                        <T w={700} size={15} color={on ? t.text : t.text3} numberOfLines={1}>
+                          {c.name}
+                        </T>
+                      </Pressable>
+                      {on ? <LevelPick value={lvl} onChange={(l) => setSel((s) => ({ ...s, [c.id]: l }))} /> : null}
+                      <T num w={800} size={14} color={on ? t.text : t.text3} style={{ width: 42, textAlign: 'right' }}>
+                        {Math.round(c.kcal * mult)}
                       </T>
                     </View>
-                    <T num w={800} size={15} color={on[i] ? t.text : t.text3}>
-                      {c.kcal}
-                    </T>
-                  </Pressable>
-                ))}
+                  );
+                })}
               </Card>
+            </View>
+          ))}
 
-              <Card pad={18} style={{ marginTop: 12, backgroundColor: t.accentSofter }}>
+          {editMode ? (
+            <Button variant="ghost" icon="plus" onPress={() => setEditing('new')} style={{ marginBottom: 8 }}>
+              Add a menu item
+            </Button>
+          ) : null}
+
+          {/* order summary + actions */}
+          {!editMode && canLog ? (
+            <>
+              <Card pad={18} style={{ marginTop: 6, backgroundColor: t.accentSofter }}>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
                   <SectionLabel>Your order</SectionLabel>
                   <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
@@ -242,28 +348,176 @@ export function DiningOutScreen({ navigation, route }: Props) {
                   P {Math.round(totals.protein)} · C {Math.round(totals.carb)} · F {Math.round(totals.fat)} g · ~{Math.round(totals.grams)} g
                 </T>
               </Card>
-
               <View style={{ gap: 10, marginTop: 12 }}>
-                <Button full size="lg" icon="check" onPress={logBuilt}>
+                <Button full size="lg" icon="check" onPress={logOrder}>
                   Log to {MEALS.find((m) => m.key === slot)?.label ?? slot}
                 </Button>
                 <Button full variant="soft" icon="star" onPress={saveOrder}>
                   Save this order
                 </Button>
               </View>
-            </View>
+            </>
           ) : null}
         </>
-      ) : (
-        <T w={600} size={14} color={t.text3} style={{ padding: 8 }}>
-          Pick a restaurant to see your saved orders or build a new one.
-        </T>
       )}
 
       <T w={600} size={12} color={t.text3} style={{ textAlign: 'center', marginTop: 16, lineHeight: 18 }}>
-        Numbers come from the chain&rsquo;s published nutrition and are saved on your server — edit a
-        logged item any time from the day&rsquo;s log.
+        Light = half · Extra = double. Numbers come from the chain&rsquo;s published nutrition and live
+        on your server — tap “Edit menu” to correct anything.
       </T>
+
+      <EditComponentSheet restaurant={rest} editing={editing} onClose={() => setEditing(null)} onRemoved={(id) => setSel((s) => { const n = { ...s }; delete n[id]; return n; })} />
     </Screen>
+  );
+}
+
+function LevelPick({ value, onChange }: { value: Level; onChange: (l: Level) => void }) {
+  const t = useTheme();
+  const opts: { k: Level; l: string }[] = [
+    { k: 'light', l: 'L' },
+    { k: 'normal', l: 'N' },
+    { k: 'extra', l: 'E' },
+  ];
+  return (
+    <View style={{ flexDirection: 'row', gap: 2, backgroundColor: t.surface2, borderRadius: 9, padding: 2 }}>
+      {opts.map((o) => (
+        <Pressable key={o.k} onPress={() => onChange(o.k)} hitSlop={4} style={{ paddingVertical: 4, paddingHorizontal: 9, borderRadius: 7, backgroundColor: value === o.k ? t.accent : 'transparent' }}>
+          <T w={800} size={12} color={value === o.k ? '#fff' : t.text3}>
+            {o.l}
+          </T>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+type EFld = 'grams' | 'kcal' | 'protein' | 'carb' | 'fat';
+
+function EditComponentSheet({
+  restaurant,
+  editing,
+  onClose,
+  onRemoved,
+}: {
+  restaurant: string;
+  editing: MenuComponent | 'new' | null;
+  onClose: () => void;
+  onRemoved: (id: number) => void;
+}) {
+  const t = useTheme();
+  const qc = useQueryClient();
+  const existing = editing && editing !== 'new' ? editing : null;
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('other');
+  const [vals, setVals] = useState<Record<EFld, string>>({ grams: '', kcal: '', protein: '', carb: '', fat: '' });
+  const [active, setActive] = useState<EFld | null>(null);
+  const fresh = useRef(true);
+
+  useEffect(() => {
+    if (!editing) return;
+    if (existing) {
+      setName(existing.name);
+      setCategory((existing.category || 'other').toLowerCase());
+      setVals({ grams: String(existing.grams), kcal: String(existing.kcal), protein: String(existing.protein_g), carb: String(existing.carb_g), fat: String(existing.fat_g) });
+    } else {
+      setName('');
+      setCategory('other');
+      setVals({ grams: '', kcal: '', protein: '', carb: '', fat: '' });
+    }
+    setActive(null);
+  }, [editing, existing]);
+
+  const press = (k: string) => {
+    if (!active) return;
+    setVals((v) => ({ ...v, [active]: applyNumberKey(v[active], k, fresh.current) }));
+    fresh.current = false;
+  };
+  const focus = (f: EFld) => {
+    setActive(f);
+    fresh.current = true;
+  };
+
+  const save = useMutation({
+    mutationFn: () => {
+      const payload = {
+        restaurant,
+        name: name.trim(),
+        category,
+        grams: Number(vals.grams) || 0,
+        kcal: Number(vals.kcal) || 0,
+        protein_g: Number(vals.protein) || 0,
+        carb_g: Number(vals.carb) || 0,
+        fat_g: Number(vals.fat) || 0,
+        default_on: existing ? !!existing.default_on : true,
+      };
+      return existing ? api.restaurants.updateComponent(existing.id, payload) : api.restaurants.saveComponent(payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['restaurant-components', restaurant] });
+      onClose();
+    },
+  });
+  const del = useMutation({
+    mutationFn: () => api.restaurants.removeComponent(existing!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['restaurant-components', restaurant] });
+      if (existing) onRemoved(existing.id);
+      onClose();
+    },
+  });
+
+  if (!editing) return null;
+
+  return (
+    <Sheet visible={!!editing} onClose={onClose} title={existing ? 'Edit item' : 'Add menu item'}>
+      <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Guacamole" autoFocus={!existing} />
+      <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>
+        Category
+      </T>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 14 }}>
+        {CAT_ORDER.map((c) => (
+          <Chip key={c} active={category === c} onPress={() => setCategory(c)}>
+            {c}
+          </Chip>
+        ))}
+      </View>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <NumberField label="Calories" value={vals.kcal} unit="kcal" active={active === 'kcal'} onPress={() => focus('kcal')} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <NumberField label="Grams" value={vals.grams} unit="g" active={active === 'grams'} onPress={() => focus('grams')} />
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <NumberField label="Protein" value={vals.protein} unit="g" active={active === 'protein'} onPress={() => focus('protein')} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <NumberField label="Carbs" value={vals.carb} unit="g" active={active === 'carb'} onPress={() => focus('carb')} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <NumberField label="Fat" value={vals.fat} unit="g" active={active === 'fat'} onPress={() => focus('fat')} />
+        </View>
+      </View>
+      <View style={{ marginTop: 2, marginBottom: 14 }}>
+        {active ? null : (
+          <T w={700} size={13} color={t.text3} style={{ textAlign: 'center', marginBottom: 8 }}>
+            Tap a box, then type.
+          </T>
+        )}
+        <NumberPad onKey={press} keyHeight={50} />
+      </View>
+      <Button full size="lg" icon="check" onPress={() => save.mutate()}>
+        {existing ? 'Save' : 'Add item'}
+      </Button>
+      {existing ? (
+        <Pressable onPress={() => del.mutate()} style={{ alignItems: 'center', paddingVertical: 14 }}>
+          <T w={800} size={15} color={t.caution}>
+            Delete from menu
+          </T>
+        </Pressable>
+      ) : null}
+    </Sheet>
   );
 }

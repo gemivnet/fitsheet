@@ -247,6 +247,7 @@ export interface NewLogEntry {
 
 export interface RestaurantComponent {
   name: string;
+  category: string;
   grams: number;
   kcal: number;
   protein_g: number;
@@ -258,6 +259,19 @@ export interface RestaurantItem {
   name: string;
   components: RestaurantComponent[];
   note?: string | null;
+}
+export interface MenuComponent {
+  id: number;
+  restaurant: string;
+  name: string;
+  category: string | null;
+  grams: number;
+  kcal: number;
+  protein_g: number;
+  carb_g: number;
+  fat_g: number;
+  default_on: number;
+  sort_order: number;
 }
 
 // ── grouped methods ─────────────────────────────────────────────────────────
@@ -355,6 +369,13 @@ export const api = {
   },
 
   analytics: { summary: () => req<Analytics>('GET', '/api/analytics/summary') },
+
+  restaurants: {
+    components: (restaurant: string) => req<MenuComponent[]>('GET', `/api/restaurants/components?restaurant=${encodeURIComponent(restaurant)}`),
+    saveComponent: (c: Partial<MenuComponent>) => req<MenuComponent>('POST', '/api/restaurants/components', c),
+    updateComponent: (id: number, p: Partial<MenuComponent>) => req<MenuComponent>('PATCH', `/api/restaurants/components/${id}`, p),
+    removeComponent: (id: number) => req('DELETE', `/api/restaurants/components/${id}`),
+  },
 
   ai: {
     extractLabel: (form: FormData) =>
