@@ -299,8 +299,9 @@ export interface FoodRowData {
   grams: number;
   kcal: number;
   macros: { label: string; grams: number; varName: Macro }[];
+  eatingOut?: boolean;
 }
-export function FoodRow({ name, grams, kcal, macros, last }: FoodRowData & { last?: boolean }) {
+export function FoodRow({ name, grams, kcal, macros, eatingOut, last }: FoodRowData & { last?: boolean }) {
   const t = useTheme();
   return (
     <View
@@ -314,9 +315,16 @@ export function FoodRow({ name, grams, kcal, macros, last }: FoodRowData & { las
       }}
     >
       <View style={{ flex: 1, minWidth: 0 }}>
-        <T w={700} size={16} numberOfLines={1} style={{ marginBottom: 4 }}>
-          {name}
-        </T>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+          <T w={700} size={16} numberOfLines={1} style={{ flexShrink: 1 }}>
+            {name}
+          </T>
+          {eatingOut ? (
+            <View style={{ paddingVertical: 2, paddingHorizontal: 7, borderRadius: 999, backgroundColor: t.cautionSoft }}>
+              <Text style={{ fontFamily: Font[800], fontSize: 11, color: t.caution }}>🍔 out</Text>
+            </View>
+          ) : null}
+        </View>
         <View style={{ flexDirection: 'row', gap: 6 }}>
           {macros.map((m) => (
             <MacroChip key={m.label} label={m.label[0]} grams={m.grams} varName={m.varName} />

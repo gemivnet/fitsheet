@@ -167,6 +167,7 @@ export function FoodDayScreen({ navigation }: Props) {
                       name={it.name}
                       grams={Math.round(it.grams)}
                       kcal={Math.round(it.kcal)}
+                      eatingOut={!!it.eating_out}
                       macros={[
                         { label: 'Protein', grams: Math.round(it.protein), varName: 'pro' },
                         { label: 'Carb', grams: Math.round(it.carb), varName: 'carb' },

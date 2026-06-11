@@ -18,6 +18,7 @@ interface LogRow {
   carb: number;
   fat: number;
   sort_order: number;
+  eating_out: number;
 }
 
 export function daySummary(db: DB, date: string) {
@@ -94,6 +95,14 @@ export function foodLogRouter(db: DB): Router {
     res.json(daySummary(db, date));
   });
 
+  // Gentle "eating out" counter: distinct meals (day+slot) eaten out this week vs last week.
+  r.get('/dining-stats', (req, res) => {
+    const date = (req.query.date as string) || todayStr();
+    const count = (from: string, to: string): number =>
+      (db.prepare('SELECT COUNT(*) AS n FROM (SELECT DISTINCT day_date, meal_slot FROM food_log WHERE eating_out = 1 AND day_date BETWEEN ? AND ?)').get(from, to) as { n: number }).n;
+    res.json({ this_week: count(addDaysStr(date, -6), date), last_week: count(addDaysStr(date, -13), addDaysStr(date, -7)) });
+  });
+
   // Toggle the calorie bank off (or back on) for a single day.
   r.post('/snooze', (req, res) => {
     const b = (req.body ?? {}) as Record<string, any>;
@@ -128,13 +137,19 @@ export function foodLogRouter(db: DB): Router {
     const protein = round(Number(b.protein_100g ?? 0) * factor, 1);
     const carb = round(Number(b.carb_100g ?? 0) * factor, 1);
     const fat = round(Number(b.fat_100g ?? 0) * factor, 1);
+    // eating-out flag: explicit from the client, else inherited from the saved food.
+    let eatingOut = b.eating_out != null ? (b.eating_out ? 1 : 0) : 0;
+    if (b.eating_out == null && b.food_id != null) {
+      const f = db.prepare('SELECT eating_out FROM foods WHERE id = ?').get(b.food_id) as { eating_out: number } | undefined;
+      eatingOut = f?.eating_out ? 1 : 0;
+    }
     const ts = nowIso();
     const info = db
       .prepare(
-        'INSERT INTO food_log (day_date,meal_slot,food_id,name,grams,kcal,protein,carb,fat,sort_order,created_at) ' +
-          'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO food_log (day_date,meal_slot,food_id,name,grams,kcal,protein,carb,fat,sort_order,eating_out,created_at) ' +
+          'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
       )
-      .run(date, slot, b.food_id ?? null, b.name ?? 'Food', grams, kcal, protein, carb, fat, Date.now() % 100000, ts);
+      .run(date, slot, b.food_id ?? null, b.name ?? 'Food', grams, kcal, protein, carb, fat, Date.now() % 100000, eatingOut, ts);
     // Remember how this food was entered (grams vs servings) and the amount, so re-adding
     // it pre-fills the same way. Bumping updated_at also floats it up the "My foods" list.
     if (b.food_id != null) {

@@ -177,6 +177,9 @@ export function AddFoodScreen({ navigation, route }: Props) {
         {tab === 'Describe' ? <DescribeTab slot={slot} date={date} onDone={() => navigation.goBack()} /> : null}
 
         <View style={{ alignItems: 'center', paddingVertical: 16, gap: 10 }}>
+          <Button variant="soft" icon="food" full onPress={() => navigation.navigate('DiningOut', { slot, date })}>
+            Dining out 🍔
+          </Button>
           <Button variant="ghost" icon="plus" onPress={() => navigation.navigate('LabelCapture', { slot, date })}>
             Add a custom food
           </Button>

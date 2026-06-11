@@ -3,6 +3,7 @@ import { generateCheckin, generateMealPlan } from '../ai/coach';
 import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
 import { parseRecipe } from '../ai/parseRecipe';
+import { restaurantItem } from '../ai/restaurantItem';
 import { hasAnthropicKey } from '../config';
 import type { DB } from '../db/index';
 import { upload } from '../upload';
@@ -54,6 +55,45 @@ export function aiRouter(db: DB): Router {
     } catch (e) {
       res.status(502).json({ error: 'parse_failed', detail: String(e) });
     }
+  });
+
+  // ── restaurant "build your item" (AI pulls published nutrition once, cached locally) ──
+  r.post('/restaurant-item', async (req, res) => {
+    const restaurant = String(req.body?.restaurant ?? '').trim();
+    const item = String(req.body?.item ?? '').trim();
+    if (!restaurant || !item) return res.status(400).json({ error: 'restaurant and item required' });
+    const query = item.toLowerCase();
+    const cached = db.prepare('SELECT name, components_json FROM restaurant_menu WHERE restaurant = ? AND query = ?').get(restaurant, query) as
+      | { name: string; components_json: string }
+      | undefined;
+    if (cached) return res.json({ item: { name: cached.name, components: JSON.parse(cached.components_json) }, cached: true });
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    try {
+      const parsed = await restaurantItem(restaurant, item);
+      if (parsed) {
+        const ts = nowIso();
+        db.prepare(
+          'INSERT INTO restaurant_menu (restaurant, query, name, components_json, created_at, updated_at) VALUES (?,?,?,?,?,?) ' +
+            'ON CONFLICT(restaurant, query) DO UPDATE SET name=excluded.name, components_json=excluded.components_json, updated_at=excluded.updated_at',
+        ).run(restaurant, query, parsed.name, JSON.stringify(parsed.components), ts, ts);
+      }
+      res.json({ item: parsed, cached: false });
+    } catch (e) {
+      res.status(502).json({ error: 'failed', detail: String(e) });
+    }
+  });
+
+  // cached orders she's already looked up at a restaurant — instant rebuild, no AI call
+  r.get('/restaurant-menu', (req, res) => {
+    const restaurant = String(req.query.restaurant ?? '').trim();
+    if (!restaurant) return res.json([]);
+    const rows = db.prepare('SELECT id, name, query, components_json FROM restaurant_menu WHERE restaurant = ? ORDER BY updated_at DESC LIMIT 50').all(restaurant) as {
+      id: number;
+      name: string;
+      query: string;
+      components_json: string;
+    }[];
+    res.json(rows.map((row) => ({ id: row.id, name: row.name, query: row.query, components: JSON.parse(row.components_json) })));
   });
 
   // ── weekly check-in (cached ~7 days in the settings table) ───────────────

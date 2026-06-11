@@ -272,7 +272,8 @@ export function HomeScreen() {
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, paddingLeft: 31 }}
                   >
                     <T w={700} size={14} color={t.text2} numberOfLines={1} style={{ flex: 1, paddingRight: 10 }}>
-                      {it.name} <T w={600} size={12} color={t.text3}>· {Math.round(it.grams)} g</T>
+                      {it.name}
+                      {it.eating_out ? ' 🍔' : ''} <T w={600} size={12} color={t.text3}>· {Math.round(it.grams)} g</T>
                     </T>
                     <T num w={800} size={14}>
                       {Math.round(it.kcal)}

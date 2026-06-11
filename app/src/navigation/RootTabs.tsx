@@ -11,6 +11,7 @@ import {
   ActivityScreen,
   AddFoodScreen,
   AnalyticsScreen,
+  DiningOutScreen,
   DishBuilderScreen,
   FoodDayScreen,
   HomeScreen,
@@ -33,6 +34,7 @@ function FoodStack() {
       <FoodNav.Screen name="AddFood" component={AddFoodScreen} />
       <FoodNav.Screen name="LabelCapture" component={LabelCaptureScreen} />
       <FoodNav.Screen name="DishBuilder" component={DishBuilderScreen} />
+      <FoodNav.Screen name="DiningOut" component={DiningOutScreen} />
     </FoodNav.Navigator>
   );
 }

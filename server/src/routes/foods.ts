@@ -3,20 +3,31 @@ import { writeAudit } from '../audit';
 import type { DB } from '../db/index';
 import { nowIso } from '../util';
 
-const ALLOWED = ['name', 'brand', 'barcode', 'source', 'off_id', 'serving_g', 'serving_label', 'unit_name', 'kcal_100g', 'protein_100g', 'carb_100g', 'fat_100g', 'label_photo', 'is_favorite', 'pref_unit_mode', 'last_grams'] as const;
+const ALLOWED = ['name', 'brand', 'barcode', 'source', 'off_id', 'serving_g', 'serving_label', 'unit_name', 'restaurant', 'eating_out', 'kcal_100g', 'protein_100g', 'carb_100g', 'fat_100g', 'label_photo', 'is_favorite', 'pref_unit_mode', 'last_grams'] as const;
+const FLAGS = new Set(['is_favorite', 'eating_out']);
 
 export function foodsRouter(db: DB): Router {
   const r = Router();
 
   r.get('/', (req, res) => {
     const q = (req.query.q as string | undefined)?.trim();
+    const restaurant = (req.query.restaurant as string | undefined)?.trim();
     if (q) {
       res.json(db.prepare('SELECT * FROM foods WHERE name LIKE ? ORDER BY is_favorite DESC, updated_at DESC LIMIT 100').all(`%${q}%`));
+    } else if (restaurant) {
+      res.json(db.prepare('SELECT * FROM foods WHERE restaurant = ? ORDER BY updated_at DESC LIMIT 100').all(restaurant));
+    } else if (req.query.eating_out === '1') {
+      res.json(db.prepare('SELECT * FROM foods WHERE eating_out = 1 ORDER BY updated_at DESC LIMIT 100').all());
     } else if (req.query.favorite === '1') {
       res.json(db.prepare('SELECT * FROM foods WHERE is_favorite = 1 ORDER BY updated_at DESC LIMIT 100').all());
     } else {
       res.json(db.prepare('SELECT * FROM foods ORDER BY is_favorite DESC, updated_at DESC LIMIT 100').all());
     }
+  });
+
+  // distinct restaurants she's saved orders for (most-used first)
+  r.get('/restaurants', (_req, res) => {
+    res.json(db.prepare("SELECT restaurant, COUNT(*) AS count FROM foods WHERE restaurant IS NOT NULL AND restaurant != '' GROUP BY restaurant ORDER BY count DESC, restaurant").all());
   });
 
   // Smart "My foods" ordering: what she's most likely to add right now. Blends frequency,
@@ -115,8 +126,8 @@ export function foodsRouter(db: DB): Router {
     const ts = nowIso();
     const info = db
       .prepare(
-        'INSERT INTO foods (name,brand,barcode,source,off_id,serving_g,serving_label,unit_name,kcal_100g,protein_100g,carb_100g,fat_100g,label_photo,is_favorite,created_at,updated_at) ' +
-          'VALUES (@name,@brand,@barcode,@source,@off_id,@serving_g,@serving_label,@unit_name,@kcal_100g,@protein_100g,@carb_100g,@fat_100g,@label_photo,@is_favorite,@created_at,@updated_at)',
+        'INSERT INTO foods (name,brand,barcode,source,off_id,serving_g,serving_label,unit_name,restaurant,eating_out,kcal_100g,protein_100g,carb_100g,fat_100g,label_photo,is_favorite,created_at,updated_at) ' +
+          'VALUES (@name,@brand,@barcode,@source,@off_id,@serving_g,@serving_label,@unit_name,@restaurant,@eating_out,@kcal_100g,@protein_100g,@carb_100g,@fat_100g,@label_photo,@is_favorite,@created_at,@updated_at)',
       )
       .run({
         name: b.name,
@@ -127,6 +138,8 @@ export function foodsRouter(db: DB): Router {
         serving_g: b.serving_g ?? null,
         serving_label: b.serving_label ?? null,
         unit_name: b.unit_name ?? null,
+        restaurant: b.restaurant ?? null,
+        eating_out: b.eating_out ? 1 : 0,
         kcal_100g: b.kcal_100g ?? 0,
         protein_100g: b.protein_100g ?? 0,
         carb_100g: b.carb_100g ?? 0,
@@ -147,10 +160,10 @@ export function foodsRouter(db: DB): Router {
     if (!existing) return res.status(404).json({ error: 'not_found' });
     const b = (req.body ?? {}) as Record<string, unknown>;
     const next: Record<string, unknown> = { ...existing };
-    for (const k of ALLOWED) if (k in b) next[k] = k === 'is_favorite' ? (b[k] ? 1 : 0) : b[k];
+    for (const k of ALLOWED) if (k in b) next[k] = FLAGS.has(k) ? (b[k] ? 1 : 0) : b[k];
     next.updated_at = nowIso();
     db.prepare(
-      'UPDATE foods SET name=@name,brand=@brand,barcode=@barcode,source=@source,off_id=@off_id,serving_g=@serving_g,serving_label=@serving_label,unit_name=@unit_name,kcal_100g=@kcal_100g,protein_100g=@protein_100g,carb_100g=@carb_100g,fat_100g=@fat_100g,label_photo=@label_photo,is_favorite=@is_favorite,updated_at=@updated_at WHERE id=@id',
+      'UPDATE foods SET name=@name,brand=@brand,barcode=@barcode,source=@source,off_id=@off_id,serving_g=@serving_g,serving_label=@serving_label,unit_name=@unit_name,restaurant=@restaurant,eating_out=@eating_out,kcal_100g=@kcal_100g,protein_100g=@protein_100g,carb_100g=@carb_100g,fat_100g=@fat_100g,label_photo=@label_photo,is_favorite=@is_favorite,updated_at=@updated_at WHERE id=@id',
     ).run({ ...next, id });
     writeAudit(db, { entity: 'food', entityId: id, action: 'update' });
     res.json(db.prepare('SELECT * FROM foods WHERE id = ?').get(id));

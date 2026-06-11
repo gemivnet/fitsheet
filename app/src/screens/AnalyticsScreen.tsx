@@ -6,7 +6,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
 import { Card, Icon, ProgressBar, Screen, SectionLabel, T, WeightChart, type WeightPoint } from '../components';
 import { api } from '../lib/api';
-import { prettyDate } from '../lib/date';
+import { prettyDate, todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
 import { useTheme } from '../theme';
 
@@ -15,6 +15,7 @@ export function AnalyticsScreen() {
   const nav = useNavigation();
   const a = useQuery({ queryKey: ['analytics'], queryFn: api.analytics.summary });
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings.get });
+  const dining = useQuery({ queryKey: ['dining-stats'], queryFn: () => api.foodLog.diningStats(todayStr()) });
   useFocusEffect(useCallback(() => void a.refetch(), [a.refetch]));
 
   const units = settings.data?.units ?? 'lb';
@@ -104,6 +105,14 @@ export function AnalyticsScreen() {
             <Row label="Calorie bank" value={`${d.adherence.cumulative_deficit > 0 ? '+' : ''}${d.adherence.cumulative_deficit} kcal`} tone={d.adherence.cumulative_deficit >= 0 ? 'good' : 'warn'} />
             <Row label="Logging streak" value={`${d.adherence.logging_streak} days 🔥`} last />
           </Card>
+
+          {dining.data && (dining.data.this_week > 0 || dining.data.last_week > 0) ? (
+            <Card pad={18} style={{ marginTop: 12 }}>
+              <SectionLabel style={{ marginBottom: 12 }}>Dining out</SectionLabel>
+              <Row label="This week" value={`🍔 ${dining.data.this_week}×`} tone={dining.data.this_week > dining.data.last_week ? 'warn' : 'good'} />
+              <Row label="Last week" value={`${dining.data.last_week}×`} last />
+            </Card>
+          ) : null}
         </>
       )}
     </Screen>

@@ -61,6 +61,8 @@ export interface Food {
   serving_g: number | null;
   serving_label: string | null;
   unit_name: string | null;
+  restaurant: string | null;
+  eating_out: number;
   kcal_100g: number;
   protein_100g: number;
   carb_100g: number;
@@ -96,6 +98,7 @@ export interface LogEntry {
   protein: number;
   carb: number;
   fat: number;
+  eating_out: number;
 }
 export interface DaySummary {
   date: string;
@@ -239,6 +242,22 @@ export interface NewLogEntry {
   carb_100g: number;
   fat_100g: number;
   unit_mode?: 'grams' | 'servings' | null;
+  eating_out?: number;
+}
+
+export interface RestaurantComponent {
+  name: string;
+  grams: number;
+  kcal: number;
+  protein_g: number;
+  carb_g: number;
+  fat_g: number;
+  default_on: boolean;
+}
+export interface RestaurantItem {
+  name: string;
+  components: RestaurantComponent[];
+  note?: string | null;
 }
 
 // ── grouped methods ─────────────────────────────────────────────────────────
@@ -264,6 +283,8 @@ export const api = {
     update: (id: number, p: Partial<Food>) => req<Food>('PATCH', `/api/foods/${id}`, p),
     remove: (id: number) => req('DELETE', `/api/foods/${id}`),
     barcodeLocal: (code: string) => req<Food>('GET', `/api/foods/barcode/${encodeURIComponent(code)}`),
+    restaurants: () => req<{ restaurant: string; count: number }[]>('GET', '/api/foods/restaurants'),
+    dining: (restaurant?: string) => req<Food[]>('GET', `/api/foods?eating_out=1${restaurant ? `&restaurant=${encodeURIComponent(restaurant)}` : ''}`),
   },
 
   off: {
@@ -276,6 +297,7 @@ export const api = {
     add: (e: NewLogEntry) => req<DaySummary & { added_id: number }>('POST', '/api/food-log', e),
     snooze: (date: string, snoozed: boolean) => req<DaySummary>('POST', '/api/food-log/snooze', { date, snoozed }),
     mealComplete: (date: string, meal_slot: string, complete: boolean) => req<DaySummary>('POST', '/api/food-log/meal-complete', { date, meal_slot, complete }),
+    diningStats: (date: string) => req<{ this_week: number; last_week: number }>('GET', `/api/food-log/dining-stats?date=${date}`),
     update: (id: number, p: { grams?: number; meal_slot?: string }) => req<DaySummary>('PATCH', `/api/food-log/${id}`, p),
     remove: (id: number) => req<DaySummary>('DELETE', `/api/food-log/${id}`),
   },
@@ -342,6 +364,8 @@ export const api = {
     checkin: () => req<{ note: string | null }>('GET', '/api/ai/checkin'),
     refreshCheckin: () => req<{ note: string | null }>('POST', '/api/ai/checkin/refresh'),
     mealPlan: (days: number) => req<{ plan: MealPlan | null }>('POST', '/api/ai/meal-plan', { days }),
+    restaurantItem: (restaurant: string, item: string) => req<{ item: RestaurantItem | null; cached?: boolean; error?: string }>('POST', '/api/ai/restaurant-item', { restaurant, item }),
+    restaurantMenu: (restaurant: string) => req<({ id: number; query: string } & RestaurantItem)[]>('GET', `/api/ai/restaurant-menu?restaurant=${encodeURIComponent(restaurant)}`),
   },
 
   dev: {
