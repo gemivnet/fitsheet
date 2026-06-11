@@ -19,6 +19,7 @@ interface Picked {
   brand?: string | null;
   serving_g?: number | null;
   serving_label?: string | null;
+  unit_name?: string | null;
   barcode?: string | null;
   off_id?: string | null;
   pref_unit_mode?: UnitMode | null;
@@ -41,7 +42,7 @@ export function AddFoodScreen({ navigation, route }: Props) {
   const [picked, setPicked] = useState<Picked | null>(null);
 
   const add = useMutation({
-    mutationFn: async (p: { grams: number; food: Picked; mode: UnitMode; servingG: number | null }) => {
+    mutationFn: async (p: { grams: number; food: Picked; mode: UnitMode; servingG: number | null; unitName: string | null }) => {
       let foodId = p.food.food_id ?? null;
       // Save barcoded (scanned / searched) foods to the library so they're re-addable later.
       // Dedupe by barcode so re-scanning the same product never makes a duplicate.
@@ -58,6 +59,7 @@ export function AddFoodScreen({ navigation, route }: Props) {
             source: 'off',
             serving_g: p.servingG ?? p.food.serving_g ?? null,
             serving_label: p.food.serving_label ?? null,
+            unit_name: p.unitName ?? p.food.unit_name ?? null,
             kcal_100g: p.food.kcal_100g,
             protein_100g: p.food.protein_100g,
             carb_100g: p.food.carb_100g,
@@ -66,9 +68,12 @@ export function AddFoodScreen({ navigation, route }: Props) {
           foodId = created.id;
         }
       }
-      // Remember a serving size she set inline (so servings keep working next time).
-      if (foodId != null && p.servingG != null && p.servingG !== (p.food.serving_g ?? null)) {
-        await api.foods.update(foodId, { serving_g: p.servingG }).catch(() => {});
+      // Remember the piece she defined inline (grams-per-piece + its name) so "3 sausages" works next time.
+      if (foodId != null) {
+        const patch: Partial<Food> = {};
+        if (p.servingG != null && p.servingG !== (p.food.serving_g ?? null)) patch.serving_g = p.servingG;
+        if (p.unitName && p.unitName !== (p.food.unit_name ?? null)) patch.unit_name = p.unitName;
+        if (Object.keys(patch).length) await api.foods.update(foodId, patch).catch(() => {});
       }
       return api.foodLog.add({
         date,
@@ -134,7 +139,7 @@ export function AddFoodScreen({ navigation, route }: Props) {
         </Button>
       </View>
 
-      <GramsSheet picked={picked} slot={slot} onClose={() => setPicked(null)} onAdd={(grams, food, mode, servingG) => add.mutate({ grams, food, mode, servingG })} />
+      <GramsSheet picked={picked} slot={slot} onClose={() => setPicked(null)} onAdd={(grams, food, mode, servingG, unitName) => add.mutate({ grams, food, mode, servingG, unitName })} />
     </Screen>
   );
 }
@@ -149,6 +154,7 @@ function foodToPicked(f: Food): Picked {
     brand: f.brand,
     serving_g: f.serving_g,
     serving_label: f.serving_label,
+    unit_name: f.unit_name,
     barcode: f.barcode,
     pref_unit_mode: f.pref_unit_mode,
     last_grams: f.last_grams,
@@ -435,17 +441,12 @@ function trimNum(x: number): string {
   return String(Math.round(x * 1000) / 1000);
 }
 
-// Parse a serving label like "2 links" or "1 cup" into a per-serving unit count, so servings
-// can read out as real-world units (1.5 servings × 2 = 3 links). Mass/volume labels return null.
-function parseServingUnits(label?: string | null): { per: number; unit: string } | null {
-  if (!label) return null;
-  const m = label.trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*(?:x\s*)?([A-Za-z][A-Za-z .'’-]*)/);
-  if (!m) return null;
-  const per = Number(m[1]);
-  const unit = m[2].trim().replace(/[.\s]+$/, '');
-  if (!per || !unit) return null;
-  if (/^(g|gram|grams|kg|mg|ml|l|oz|fl|lb|lbs)\b/i.test(unit)) return null;
-  return { per, unit };
+// "sausage" → "Sausages" for the tile label; empty → "Pieces".
+function pluralLabel(name: string): string {
+  const n = name.trim();
+  if (!n) return 'Pieces';
+  const p = /s$/i.test(n) ? n : `${n}s`;
+  return p.charAt(0).toUpperCase() + p.slice(1);
 }
 
 const KEYS: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'back'];
@@ -459,38 +460,40 @@ function GramsSheet({
   picked: Picked | null;
   slot: string;
   onClose: () => void;
-  onAdd: (grams: number, food: Picked, mode: UnitMode, servingG: number | null) => void;
+  onAdd: (grams: number, food: Picked, mode: UnitMode, servingG: number | null, unitName: string | null) => void;
 }) {
   const t = useTheme();
   const [mode, setMode] = useState<UnitMode>('grams');
-  const [entry, setEntry] = useState('100');
-  const [svEntry, setSvEntry] = useState(''); // grams per serving (may be unset)
-  const [field, setField] = useState<'amount' | 'serving'>('amount'); // what the numpad edits
+  const [entry, setEntry] = useState('100'); // amount in the active mode (grams, or a piece count)
+  const [pieceEntry, setPieceEntry] = useState(''); // grams in one piece (may be unset)
+  const [unitName, setUnitName] = useState(''); // e.g. "sausage"
+  const [field, setField] = useState<'amount' | 'piece'>('amount'); // what the numpad edits
   // "fresh" = the active field shows a pre-fill; the first keypress replaces it (start typing instantly).
   const [fresh, setFresh] = useState(true);
 
   useEffect(() => {
     if (!picked) return;
-    const sg = picked.serving_g && picked.serving_g > 0 ? picked.serving_g : null;
-    const startMode: UnitMode = sg && picked.pref_unit_mode === 'servings' ? 'servings' : 'grams';
+    const pg = picked.serving_g && picked.serving_g > 0 ? picked.serving_g : null;
+    const startMode: UnitMode = pg && picked.pref_unit_mode === 'servings' ? 'servings' : 'grams';
     const startGrams = picked.last_grams ?? picked.serving_g ?? 100;
     setMode(startMode);
-    setSvEntry(sg != null ? trimNum(sg) : '');
+    setPieceEntry(pg != null ? trimNum(pg) : '');
+    setUnitName(picked.unit_name ?? '');
     setField('amount');
-    setEntry(startMode === 'servings' && sg ? trimNum(startGrams / sg) : trimNum(startGrams));
+    setEntry(startMode === 'servings' && pg ? trimNum(startGrams / pg) : trimNum(startGrams));
     setFresh(true);
   }, [picked]);
 
   if (!picked) return null;
 
-  const svNum = Number(svEntry) > 0 ? Number(svEntry) : null;
-  const canServings = svNum != null;
-  const effMode: UnitMode = canServings ? mode : 'grams';
+  const pieceG = Number(pieceEntry) > 0 ? Number(pieceEntry) : null;
+  const canUnits = pieceG != null;
+  const effMode: UnitMode = canUnits ? mode : 'grams'; // 'servings' here means "pieces"
   const amt = Number(entry) || 0;
-  const grams = effMode === 'servings' && svNum ? amt * svNum : amt;
-  const servings = svNum ? grams / svNum : null;
+  const grams = effMode === 'servings' && pieceG ? amt * pieceG : amt;
+  const count = pieceG ? grams / pieceG : null;
   const kcal = Math.round((picked.kcal_100g * grams) / 100);
-  const units = parseServingUnits(picked.serving_label);
+  const piecesLabel = pluralLabel(unitName);
 
   const apply = (cur: string, key: string): string => {
     if (key === 'back') return fresh || cur.length <= 1 ? '0' : cur.slice(0, -1);
@@ -500,20 +503,20 @@ function GramsSheet({
     return next.length > 7 ? base : next;
   };
   const press = (key: string) => {
-    if (field === 'serving') setSvEntry((c) => apply(c, key));
+    if (field === 'piece') setPieceEntry((c) => apply(c, key));
     else setEntry((c) => apply(c, key));
     setFresh(false);
   };
 
-  // Tap a tile to choose what unit you're entering the amount in.
+  // Tap a tile to choose what you're counting: grams, or pieces.
   const pickAmount = (m: UnitMode) => {
-    if (m === 'servings' && !canServings) {
-      setField('serving'); // no serving size yet — set it first
+    if (m === 'servings' && !canUnits) {
+      setField('piece'); // no piece size yet — set it first
       setFresh(true);
       return;
     }
     setField('amount');
-    if (m !== mode) setEntry(m === 'servings' && svNum ? trimNum(grams / svNum) : trimNum(grams));
+    if (m !== mode) setEntry(m === 'servings' && pieceG ? trimNum(grams / pieceG) : trimNum(grams));
     setMode(m);
     setFresh(false);
   };
@@ -526,40 +529,56 @@ function GramsSheet({
         </T>
       ) : null}
 
-      {/* Grams + Servings shown together so you can cross-check; tap either to switch entry mode. */}
+      {/* Grams + Pieces shown together so you can cross-check; tap either to switch what you count. */}
       <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
         <StatTile label="Grams" value={trimNum(grams)} unit="g" active={field === 'amount' && effMode === 'grams'} onPress={() => pickAmount('grams')} />
         <StatTile
-          label="Servings"
-          value={canServings ? (servings != null ? trimNum(servings) : '—') : 'Set'}
-          unit={canServings && !units ? 'serv' : ''}
-          sub={canServings ? (units ? `≈ ${trimNum((servings ?? 0) * units.per)} ${units.unit}` : undefined) : 'tap to size'}
+          label={piecesLabel}
+          value={canUnits ? (count != null ? trimNum(count) : '—') : 'Set'}
+          unit=""
+          sub={canUnits ? undefined : 'tap to set size'}
           active={field === 'amount' && effMode === 'servings'}
           onPress={() => pickAmount('servings')}
         />
       </View>
 
-      {/* Serving-size editor — always available, so servings work for any food (Aldi sausage = X g). */}
-      <Pressable
-        onPress={() => {
-          setField('serving');
-          setFresh(true);
-        }}
-        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 11, paddingHorizontal: 14, borderRadius: 12, marginBottom: 12, backgroundColor: field === 'serving' ? t.accentSoft : t.surface2, borderWidth: 1.5, borderColor: field === 'serving' ? t.accent : t.hairline }}
+      {/* Piece editor — name it ("sausage") + how many grams it weighs. Remembered on the food,
+          so next time you just type how many you ate. */}
+      <View
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, marginBottom: 12, backgroundColor: field === 'piece' ? t.accentSoft : t.surface2, borderWidth: 1.5, borderColor: field === 'piece' ? t.accent : t.hairline }}
       >
         <T w={700} size={14} color={t.text2}>
-          1 serving =
+          1
         </T>
-        <T w={800} size={15} color={field === 'serving' ? t.accentPress : t.text}>
-          {svNum != null ? `${trimNum(svNum)} g` : 'tap to set'}
+        <TextInput
+          value={unitName}
+          onChangeText={setUnitName}
+          placeholder="piece (e.g. sausage)"
+          placeholderTextColor={t.text3}
+          style={{ flex: 1, fontFamily: Font[800], fontSize: 15, color: t.text, paddingVertical: 6 }}
+        />
+        <T w={700} size={14} color={t.text2}>
+          =
         </T>
-      </Pressable>
+        <Pressable
+          onPress={() => {
+            setField('piece');
+            setFresh(true);
+          }}
+          hitSlop={8}
+          style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 9, backgroundColor: t.surface, borderWidth: 1.5, borderColor: field === 'piece' ? t.accent : t.hairline }}
+        >
+          <T w={800} size={15} color={field === 'piece' ? t.accentPress : t.text}>
+            {pieceG != null ? `${trimNum(pieceG)} g` : 'set g'}
+          </T>
+        </Pressable>
+      </View>
 
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
         <T w={700} size={15} color={t.text2}>
-          {field === 'serving' ? 'Grams in one serving' : `Entering ${effMode}`}
+          {field === 'piece' ? `Grams in 1 ${unitName.trim() || 'piece'}` : effMode === 'servings' ? `Counting ${piecesLabel.toLowerCase()}` : 'Entering grams'}
         </T>
-        {field === 'serving' ? null : (
+        {field === 'piece' ? null : (
           <T num w={800} size={26} color={t.accentPress}>
             {kcal} kcal
           </T>
@@ -595,12 +614,12 @@ function GramsSheet({
         ))}
       </View>
 
-      {field === 'serving' ? (
+      {field === 'piece' ? (
         <Button full size="lg" icon="check" onPress={() => { setField('amount'); setFresh(false); }}>
-          Set serving size
+          Done
         </Button>
       ) : (
-        <Button full size="lg" icon="check" onPress={() => onAdd(grams, picked, effMode, svNum)}>
+        <Button full size="lg" icon="check" onPress={() => onAdd(grams, picked, effMode, pieceG, unitName.trim() || null)}>
           Add to {slot}
         </Button>
       )}

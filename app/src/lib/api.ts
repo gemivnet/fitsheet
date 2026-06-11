@@ -60,6 +60,7 @@ export interface Food {
   source: string;
   serving_g: number | null;
   serving_label: string | null;
+  unit_name: string | null;
   kcal_100g: number;
   protein_100g: number;
   carb_100g: number;

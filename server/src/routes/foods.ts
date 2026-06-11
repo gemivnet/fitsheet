@@ -3,7 +3,7 @@ import { writeAudit } from '../audit';
 import type { DB } from '../db/index';
 import { nowIso } from '../util';
 
-const ALLOWED = ['name', 'brand', 'barcode', 'source', 'off_id', 'serving_g', 'serving_label', 'kcal_100g', 'protein_100g', 'carb_100g', 'fat_100g', 'label_photo', 'is_favorite', 'pref_unit_mode', 'last_grams'] as const;
+const ALLOWED = ['name', 'brand', 'barcode', 'source', 'off_id', 'serving_g', 'serving_label', 'unit_name', 'kcal_100g', 'protein_100g', 'carb_100g', 'fat_100g', 'label_photo', 'is_favorite', 'pref_unit_mode', 'last_grams'] as const;
 
 export function foodsRouter(db: DB): Router {
   const r = Router();
@@ -102,8 +102,8 @@ export function foodsRouter(db: DB): Router {
     const ts = nowIso();
     const info = db
       .prepare(
-        'INSERT INTO foods (name,brand,barcode,source,off_id,serving_g,serving_label,kcal_100g,protein_100g,carb_100g,fat_100g,label_photo,is_favorite,created_at,updated_at) ' +
-          'VALUES (@name,@brand,@barcode,@source,@off_id,@serving_g,@serving_label,@kcal_100g,@protein_100g,@carb_100g,@fat_100g,@label_photo,@is_favorite,@created_at,@updated_at)',
+        'INSERT INTO foods (name,brand,barcode,source,off_id,serving_g,serving_label,unit_name,kcal_100g,protein_100g,carb_100g,fat_100g,label_photo,is_favorite,created_at,updated_at) ' +
+          'VALUES (@name,@brand,@barcode,@source,@off_id,@serving_g,@serving_label,@unit_name,@kcal_100g,@protein_100g,@carb_100g,@fat_100g,@label_photo,@is_favorite,@created_at,@updated_at)',
       )
       .run({
         name: b.name,
@@ -113,6 +113,7 @@ export function foodsRouter(db: DB): Router {
         off_id: b.off_id ?? null,
         serving_g: b.serving_g ?? null,
         serving_label: b.serving_label ?? null,
+        unit_name: b.unit_name ?? null,
         kcal_100g: b.kcal_100g ?? 0,
         protein_100g: b.protein_100g ?? 0,
         carb_100g: b.carb_100g ?? 0,
@@ -136,7 +137,7 @@ export function foodsRouter(db: DB): Router {
     for (const k of ALLOWED) if (k in b) next[k] = k === 'is_favorite' ? (b[k] ? 1 : 0) : b[k];
     next.updated_at = nowIso();
     db.prepare(
-      'UPDATE foods SET name=@name,brand=@brand,barcode=@barcode,source=@source,off_id=@off_id,serving_g=@serving_g,serving_label=@serving_label,kcal_100g=@kcal_100g,protein_100g=@protein_100g,carb_100g=@carb_100g,fat_100g=@fat_100g,label_photo=@label_photo,is_favorite=@is_favorite,updated_at=@updated_at WHERE id=@id',
+      'UPDATE foods SET name=@name,brand=@brand,barcode=@barcode,source=@source,off_id=@off_id,serving_g=@serving_g,serving_label=@serving_label,unit_name=@unit_name,kcal_100g=@kcal_100g,protein_100g=@protein_100g,carb_100g=@carb_100g,fat_100g=@fat_100g,label_photo=@label_photo,is_favorite=@is_favorite,updated_at=@updated_at WHERE id=@id',
     ).run({ ...next, id });
     writeAudit(db, { entity: 'food', entityId: id, action: 'update' });
     res.json(db.prepare('SELECT * FROM foods WHERE id = ?').get(id));
