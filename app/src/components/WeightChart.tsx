@@ -1,5 +1,6 @@
-// WeightChart.tsx — raw dots + smooth EWMA trend line + dashed goal line.
-// Ported from components.jsx; width is measured via onLayout so it fills its card.
+// WeightChart.tsx — raw dots + smooth trend line + dashed goal line, with optional axis
+// labels (sparse dates along the bottom, min/max on the left) when points carry dates.
+// Width is measured via onLayout so it fills its card.
 
 import React, { useState } from 'react';
 import { View } from 'react-native';
@@ -10,12 +11,27 @@ export interface WeightPoint {
   x: number;
   raw: number;
   trend: number;
+  date?: string; // YYYY-MM-DD; when present, axis labels render
 }
 
-export function WeightChart({ data, height = 210, goal }: { data: WeightPoint[]; height?: number; goal?: number }) {
+const monthDay = (s: string): string => new Date(`${s}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+export function WeightChart({
+  data,
+  height = 210,
+  goal,
+  fmtY,
+}: {
+  data: WeightPoint[];
+  height?: number;
+  goal?: number;
+  /** Formats a raw (lb) value for the y-axis — pass the user's units formatter. */
+  fmtY?: (lb: number) => string;
+}) {
   const t = useTheme();
   const [width, setWidth] = useState(0);
-  const pad = { l: 8, r: 8, t: 16, b: 8 };
+  const labeled = data.length > 0 && !!data[0].date;
+  const pad = { l: labeled && fmtY ? 40 : 8, r: 8, t: 16, b: labeled ? 24 : 8 };
 
   const ys = data.flatMap((d) => [d.raw, d.trend]);
   const minY = Math.min(...ys, goal ?? Infinity) - 1;
@@ -25,6 +41,9 @@ export function WeightChart({ data, height = 210, goal }: { data: WeightPoint[];
 
   const trendPath = data.map((d, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(d.trend).toFixed(1)}`).join(' ');
   const areaPath = `${trendPath} L${X(data.length - 1).toFixed(1)} ${height - pad.b} L${X(0).toFixed(1)} ${height - pad.b} Z`;
+
+  // first / middle / last dates — enough to orient without clutter
+  const xTicks = labeled ? [...new Set([0, Math.floor((data.length - 1) / 2), data.length - 1])] : [];
 
   return (
     <View style={{ width: '100%' }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
@@ -50,6 +69,29 @@ export function WeightChart({ data, height = 210, goal }: { data: WeightPoint[];
             <Circle key={i} cx={X(i)} cy={Y(d.raw)} r={3.2} fill={t.surface} stroke={t.chartRaw} strokeWidth={2} />
           ))}
           <Circle cx={X(data.length - 1)} cy={Y(data[data.length - 1].trend)} r={6} fill={t.accent} stroke={t.surface} strokeWidth={3} />
+          {labeled && fmtY ? (
+            <>
+              <SvgText x={2} y={Y(maxY - 1) + 4} fontSize={11} fontFamily={Font[700]} fill={t.text3}>
+                {fmtY(maxY - 1)}
+              </SvgText>
+              <SvgText x={2} y={Y(minY + 1) + 4} fontSize={11} fontFamily={Font[700]} fill={t.text3}>
+                {fmtY(minY + 1)}
+              </SvgText>
+            </>
+          ) : null}
+          {xTicks.map((i) => (
+            <SvgText
+              key={`xt-${i}`}
+              x={X(i)}
+              y={height - 6}
+              textAnchor={i === 0 ? 'start' : i === data.length - 1 ? 'end' : 'middle'}
+              fontSize={11}
+              fontFamily={Font[700]}
+              fill={t.text3}
+            >
+              {monthDay(data[i].date!)}
+            </SvgText>
+          ))}
         </Svg>
       ) : null}
     </View>

@@ -20,7 +20,7 @@ export function AnalyticsScreen() {
 
   const units = settings.data?.units ?? 'lb';
   const d = a.data;
-  const pts: WeightPoint[] = (d?.series ?? []).map((s, i) => ({ x: i, raw: s.raw, trend: s.trend }));
+  const pts: WeightPoint[] = (d?.series ?? []).map((s, i) => ({ x: i, raw: s.raw, trend: s.trend, date: s.date }));
 
   return (
     <Screen>
@@ -56,7 +56,7 @@ export function AnalyticsScreen() {
                   </T>
                 ) : null}
               </View>
-              <WeightChart data={pts} goal={d.goal.target ?? undefined} height={190} />
+              <WeightChart data={pts} goal={d.goal.target ?? undefined} height={190} fmtY={(lb) => fmtWeight(lb, units, 0)} />
             </Card>
           ) : (
             <Card style={{ marginBottom: 16 }}>
