@@ -4,7 +4,7 @@
 import { Router } from 'express';
 import { writeAudit } from '../audit';
 import type { DB } from '../db/index';
-import { nowIso } from '../util';
+import { nowIso, titleCase } from '../util';
 
 const FIELDS = ['restaurant', 'name', 'category', 'grams', 'kcal', 'protein_g', 'carb_g', 'fat_g', 'default_on', 'sort_order'] as const;
 
@@ -12,7 +12,7 @@ export function restaurantsRouter(db: DB): Router {
   const r = Router();
 
   r.get('/components', (req, res) => {
-    const restaurant = String(req.query.restaurant ?? '').trim();
+    const restaurant = titleCase(String(req.query.restaurant ?? ''));
     if (!restaurant) return res.json([]);
     res.json(db.prepare('SELECT * FROM restaurant_components WHERE restaurant = ? ORDER BY sort_order, name').all(restaurant));
   });
@@ -28,7 +28,7 @@ export function restaurantsRouter(db: DB): Router {
         'ON CONFLICT(restaurant,name) DO UPDATE SET category=excluded.category,grams=excluded.grams,kcal=excluded.kcal,' +
         'protein_g=excluded.protein_g,carb_g=excluded.carb_g,fat_g=excluded.fat_g,default_on=excluded.default_on,updated_at=excluded.updated_at',
     ).run({
-      restaurant: String(b.restaurant).trim(),
+      restaurant: titleCase(String(b.restaurant)),
       name: String(b.name).trim(),
       category: b.category ?? 'other',
       grams: Number(b.grams) || 0,

@@ -99,11 +99,16 @@ export const fullMenuContent = (restaurant: string): string =>
   '[{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}]';
 
 export async function restaurantFullMenu(restaurant: string): Promise<RestaurantComponent[]> {
-  const out = await claudeText({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 4096 });
+  const out = await claudeText({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 6000 });
   return cleanComponents(salvageObjects(out));
 }
 
-export async function restaurantItem(restaurant: string, item: string): Promise<RestaurantItem | null> {
+export async function restaurantItem(restaurant: string, item: string, menuNames: string[] = []): Promise<RestaurantItem | null> {
+  // Menu-aware: when the restaurant already has a component menu, reuse those EXACT names so the
+  // order's parts line up with the menu instead of creating near-duplicates.
+  const menuHint = menuNames.length
+    ? `\n\nThis restaurant already has these menu components — when a part of the order matches one, use its EXACT name from this list (verbatim), and only add a NEW component if the order truly includes something not listed:\n${menuNames.join(', ')}`
+    : '';
   const out = await claudeText({
     system:
       'You help someone log a restaurant meal using the chain\'s ACTUAL OFFICIAL PUBLISHED nutrition. ' +
@@ -118,7 +123,7 @@ export async function restaurantItem(restaurant: string, item: string): Promise<
       'sauce, other. Only include parts of this order plus what it standardly comes with — never invent ' +
       'unrelated items. If a value is genuinely not published, give your best estimate but keep it realistic.',
     content:
-      `Restaurant: ${restaurant}\nOrder: ${item}\n\n` +
+      `Restaurant: ${restaurant}\nOrder: ${item}${menuHint}\n\n` +
       'Reply ONLY JSON, no prose: ' +
       '{"name": string, "components": [{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}], "note": string}',
     maxTokens: 1500,

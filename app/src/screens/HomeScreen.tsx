@@ -6,8 +6,8 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, CalorieRing, Card, CelebrationModal, Icon, MacroBar, ProgressBar, Screen, SectionLabel, T } from '../components';
-import { api, type Food } from '../lib/api';
-import { slotForNow, todayStr } from '../lib/date';
+import { api } from '../lib/api';
+import { todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
 import { useTheme } from '../theme';
 import type { RootTabParams } from '../navigation/types';
@@ -29,28 +29,8 @@ export function HomeScreen() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dash = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
-  const favs = useQuery({ queryKey: ['foods', 'fav'], queryFn: api.foods.favorites });
 
   useFocusEffect(useCallback(() => void dash.refetch(), [dash.refetch]));
-
-  const logFav = useMutation({
-    mutationFn: (f: Food) =>
-      api.foodLog.add({
-        date: todayStr(),
-        meal_slot: slotForNow(),
-        food_id: f.id,
-        name: f.name,
-        grams: f.serving_g ?? 100,
-        kcal_100g: f.kcal_100g,
-        protein_100g: f.protein_100g,
-        carb_100g: f.carb_100g,
-        fat_100g: f.fat_100g,
-      }),
-    onSuccess: (_d, f) => {
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
-      flash(`${f.name} added`);
-    },
-  });
 
   const complete = useMutation({
     mutationFn: (id: number) => api.workouts.complete(id),
@@ -173,51 +153,6 @@ export function HomeScreen() {
               </Pressable>
             </View>
           ) : null}
-        </Card>
-
-        {/* quick add (favorites) */}
-        <Card pad={20} style={{ marginBottom: 16 }}>
-          <SectionLabel style={{ marginBottom: 14 }}>Quick add</SectionLabel>
-          {favs.data && favs.data.length > 0 ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 }}>
-              {favs.data.slice(0, 4).map((f) => (
-                <Pressable
-                  key={f.id}
-                  onPress={() => logFav.mutate(f)}
-                  style={({ pressed }) => [
-                    { width: '48%', flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5, borderColor: t.hairline, backgroundColor: t.surface2 },
-                    pressed ? { transform: [{ scale: 0.97 }] } : null,
-                  ]}
-                >
-                  <View style={{ width: 34, height: 34, borderRadius: 999, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon name="plus" size={18} stroke={2.6} color={t.accentPress} />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <T w={800} size={14} numberOfLines={1}>
-                      {f.name}
-                    </T>
-                    <T num w={700} size={12} color={t.text3}>
-                      {Math.round((f.kcal_100g * (f.serving_g ?? 100)) / 100)} kcal
-                    </T>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          ) : (
-            <T w={600} size={14} color={t.text3} style={{ paddingVertical: 6 }}>
-              Star a food and it shows up here for one-tap logging.
-            </T>
-          )}
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Button variant="primary" icon="search" full onPress={() => nav.navigate('Food', { screen: 'AddFood', params: { slot: slotForNow(), date: todayStr() } })}>
-                Search food
-              </Button>
-            </View>
-            <Button variant="soft" icon="camera" onPress={() => nav.navigate('Food', { screen: 'AddFood', params: { slot: slotForNow(), date: todayStr() } })}>
-              Scan
-            </Button>
-          </View>
         </Card>
 
         {/* today's meals — split by time of day, each with a "complete" tick */}

@@ -9,7 +9,7 @@ import { cleanComponents, FULL_MENU_SYSTEM, fullMenuContent, restaurantFullMenu,
 import { hasAnthropicKey } from '../config';
 import type { DB } from '../db/index';
 import { upload } from '../upload';
-import { nowIso } from '../util';
+import { nowIso, titleCase } from '../util';
 
 const NO_KEY = { error: 'no_api_key' };
 
@@ -73,7 +73,7 @@ export function aiRouter(db: DB): Router {
 
   // ── restaurant "build your item" (AI pulls published nutrition once, cached locally) ──
   r.post('/restaurant-item', async (req, res) => {
-    const restaurant = String(req.body?.restaurant ?? '').trim();
+    const restaurant = titleCase(String(req.body?.restaurant ?? ''));
     const item = String(req.body?.item ?? '').trim();
     if (!restaurant || !item) return res.status(400).json({ error: 'restaurant and item required' });
     const query = item.toLowerCase();
@@ -83,7 +83,8 @@ export function aiRouter(db: DB): Router {
     if (cached) return res.json({ item: { name: cached.name, components: JSON.parse(cached.components_json) }, cached: true });
     if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
     try {
-      const parsed = await restaurantItem(restaurant, item);
+      const menuNames = (db.prepare('SELECT name FROM restaurant_components WHERE restaurant = ? ORDER BY sort_order, name').all(restaurant) as { name: string }[]).map((r2) => r2.name);
+      const parsed = await restaurantItem(restaurant, item, menuNames);
       if (parsed) {
         const ts = nowIso();
         db.prepare(
@@ -105,7 +106,7 @@ export function aiRouter(db: DB): Router {
 
   // cached orders she's already looked up at a restaurant — instant rebuild, no AI call
   r.get('/restaurant-menu', (req, res) => {
-    const restaurant = String(req.query.restaurant ?? '').trim();
+    const restaurant = titleCase(String(req.query.restaurant ?? ''));
     if (!restaurant) return res.json([]);
     const rows = db.prepare('SELECT id, name, query, components_json FROM restaurant_menu WHERE restaurant = ? ORDER BY updated_at DESC LIMIT 50').all(restaurant) as {
       id: number;
@@ -119,7 +120,7 @@ export function aiRouter(db: DB): Router {
   // pull a restaurant's FULL build-your-own menu (all proteins, salsas, sides…) into the library
   r.post('/restaurant-menu-full', async (req, res) => {
     if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
-    const restaurant = String(req.body?.restaurant ?? '').trim();
+    const restaurant = titleCase(String(req.body?.restaurant ?? ''));
     if (!restaurant) return res.status(400).json({ error: 'restaurant required' });
     try {
       const comps = await restaurantFullMenu(restaurant);
@@ -137,7 +138,7 @@ export function aiRouter(db: DB): Router {
 
   // same as above but STREAMS the model output (SSE) so the app can show options popping in live
   r.post('/restaurant-menu-full-stream', async (req, res) => {
-    const restaurant = String(req.body?.restaurant ?? '').trim();
+    const restaurant = titleCase(String(req.body?.restaurant ?? ''));
     if (!restaurant) return res.status(400).json({ error: 'restaurant required' });
     if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
     res.setHeader('Content-Type', 'text/event-stream');
@@ -146,7 +147,7 @@ export function aiRouter(db: DB): Router {
     res.flushHeaders?.();
     const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
     try {
-      const full = await claudeStream({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 4096, onText: (t) => send({ t }) });
+      const full = await claudeStream({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 6000, onText: (t) => send({ t }) });
       const comps = cleanComponents(salvageObjects(full));
       const ts = nowIso();
       const ins = db.prepare(

@@ -4,12 +4,14 @@ import 'dotenv/config';
 import { config } from './config';
 import { openDb } from './db/index';
 import { migrate } from './db/migrate';
+import { normalizeRestaurants } from './normalize';
 import { seedDefaults } from './seed';
 import { buildServer } from './server';
 
 const db = openDb();
 migrate(db);
 seedDefaults(db);
+normalizeRestaurants(db);
 
 const app = buildServer(db);
 app.listen(config.port, () => {

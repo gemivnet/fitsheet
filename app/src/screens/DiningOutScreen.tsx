@@ -273,7 +273,6 @@ export function DiningOutScreen({ navigation, route }: Props) {
         value={restaurant}
         onChangeText={setRestaurant}
         placeholder="e.g. Chipotle, McDonald's"
-        autoFocus
         candidates={(restaurants.data ?? []).map((r) => r.restaurant)}
       />
       {restaurants.data && restaurants.data.length ? (

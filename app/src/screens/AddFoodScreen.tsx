@@ -340,7 +340,6 @@ function FindTab({ slot, date, onPick, onQuickLog }: { slot: string; date: strin
         value={text}
         onChangeText={setText}
         placeholder="Search your foods + online"
-        autoFocus
         candidates={candidates}
         fetchCompletion={(txt) => api.ai.complete(txt, 'food item being searched in a calorie tracker').then((r) => r.completion)}
       />
