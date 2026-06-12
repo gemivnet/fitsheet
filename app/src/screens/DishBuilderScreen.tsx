@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { applyNumberKey, Button, Card, Icon, NumberField, NumberPad, Screen, SectionLabel, Sheet, T, TextField, useNumberField } from '../components';
+import { applyNumberKey, Button, Card, Icon, NumberField, NumberPad, Screen, SectionLabel, Sheet, showToast, T, TextField, useNumberField } from '../components';
 import { api, type Food, type OffFood } from '../lib/api';
 import { notify } from '../lib/dialog';
 import { useTheme } from '../theme';
@@ -90,14 +90,24 @@ export function DishBuilderTab({ slot, date, goDay }: { slot: string; date: stri
 
   async function logPortion() {
     if (!ateGrams || cooked <= 0) return;
-    await api.foodLog.add({ date, meal_slot: slot, name: name.trim() || 'Dish', grams: ateGrams, kcal_100g: per100.kcal, protein_100g: per100.protein, carb_100g: per100.carb, fat_100g: per100.fat });
+    try {
+      await api.foodLog.add({ date, meal_slot: slot, name: name.trim() || 'Dish', grams: ateGrams, kcal_100g: per100.kcal, protein_100g: per100.protein, carb_100g: per100.carb, fat_100g: per100.fat });
+    } catch {
+      showToast('Couldn’t log that — try again', { kind: 'error' });
+      return;
+    }
     qc.invalidateQueries({ queryKey: ['foodlog', date] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     goDay();
   }
   async function saveDish() {
     if (cooked <= 0 || !ingredients.length) return;
-    await api.foods.create({ name: name.trim() || 'Dish', source: 'dish', serving_g: ateGrams || null, kcal_100g: per100.kcal, protein_100g: per100.protein, carb_100g: per100.carb, fat_100g: per100.fat, is_favorite: 1 } as any);
+    try {
+      await api.foods.create({ name: name.trim() || 'Dish', source: 'dish', serving_g: ateGrams || null, kcal_100g: per100.kcal, protein_100g: per100.protein, carb_100g: per100.carb, fat_100g: per100.fat, is_favorite: 1 } as any);
+    } catch {
+      showToast('Couldn’t save the dish — try again', { kind: 'error' });
+      return;
+    }
     qc.invalidateQueries({ queryKey: ['foods'] });
     qc.invalidateQueries({ queryKey: ['foods', 'dishes'] });
     notify('Saved', 'This dish is in your dishes for next time.');
@@ -247,7 +257,12 @@ function DishRelogSheet({ dish, slot, date, onClose, onLogged }: { dish: Food | 
   const g = Number(grams.value) || 0;
   const kcal = Math.round((dish.kcal_100g * g) / 100);
   const log = async () => {
-    await api.foodLog.add({ date, meal_slot: slot, food_id: dish.id, name: dish.name, grams: g, kcal_100g: dish.kcal_100g, protein_100g: dish.protein_100g, carb_100g: dish.carb_100g, fat_100g: dish.fat_100g });
+    try {
+      await api.foodLog.add({ date, meal_slot: slot, food_id: dish.id, name: dish.name, grams: g, kcal_100g: dish.kcal_100g, protein_100g: dish.protein_100g, carb_100g: dish.carb_100g, fat_100g: dish.fat_100g });
+    } catch {
+      showToast('Couldn’t log that — try again', { kind: 'error' });
+      return;
+    }
     qc.invalidateQueries({ queryKey: ['foodlog', date] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     onLogged();

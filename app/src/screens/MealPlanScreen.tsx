@@ -13,7 +13,7 @@ export function MealPlanScreen() {
   const nav = useNavigation();
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings.get });
   const [days, setDays] = useState('3');
-  const plan = useMutation({ mutationFn: () => api.ai.mealPlan(Number(days) || 3) });
+  const plan = useMutation({ mutationFn: () => api.ai.mealPlan(Number(days) || 3), meta: { suppressErrorToast: true } });
   const goal = settings.data?.daily_calorie_goal ?? 0;
 
   return (

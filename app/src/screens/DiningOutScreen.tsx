@@ -7,7 +7,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { applyNumberKey, AutocompleteField, Button, Card, Chip, Icon, NumberField, NumberPad, Screen, SectionLabel, Sheet, T, TextField } from '../components';
+import { applyNumberKey, AutocompleteField, Button, Card, Chip, Icon, NumberField, NumberPad, Screen, SectionLabel, Sheet, showToast, T, TextField } from '../components';
 import { api, apiBase, type Food, type MenuComponent, type RestaurantComponent } from '../lib/api';
 import { notify } from '../lib/dialog';
 import { useTheme } from '../theme';
@@ -86,6 +86,7 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
       setPending(out.item.components.map((c: RestaurantComponent) => ({ name: c.name, on: c.default_on })));
     },
     onError: (e: any) => setError(e?.status === 503 ? 'AI is off — add ANTHROPIC_API_KEY on the server.' : 'Couldn’t reach the server.'),
+    meta: { suppressErrorToast: true },
   });
 
   const loadCached = (name: string, comps: RestaurantComponent[]) => {
@@ -214,23 +215,33 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
 
   const logOrder = async () => {
     if (!canLog) return;
-    await api.foodLog.add({ date, meal_slot: slot, name: name(), grams: Math.round(totals.grams), eating_out: 1, ...macros100 });
+    try {
+      await api.foodLog.add({ date, meal_slot: slot, name: name(), grams: Math.round(totals.grams), eating_out: 1, ...macros100 });
+    } catch {
+      showToast('Couldn’t log that — try again', { kind: 'error' });
+      return;
+    }
     qc.invalidateQueries({ queryKey: ['foodlog', date] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     goDay();
   };
   const saveOrder = async () => {
     if (!canLog) return;
-    await api.foods.create({
-      name: orderName || `${rest} order`,
-      restaurant: rest,
-      eating_out: 1,
-      source: 'dining',
-      serving_g: Math.round(totals.grams),
-      unit_name: 'order',
-      is_favorite: 1,
-      ...macros100,
-    } as any);
+    try {
+      await api.foods.create({
+        name: orderName || `${rest} order`,
+        restaurant: rest,
+        eating_out: 1,
+        source: 'dining',
+        serving_g: Math.round(totals.grams),
+        unit_name: 'order',
+        is_favorite: 1,
+        ...macros100,
+      } as any);
+    } catch {
+      showToast('Couldn’t save the order — try again', { kind: 'error' });
+      return;
+    }
     qc.invalidateQueries({ queryKey: ['foods'] });
     qc.invalidateQueries({ queryKey: ['dining', rest] });
     qc.invalidateQueries({ queryKey: ['restaurants'] });
@@ -238,18 +249,23 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
   };
 
   const quickLogSaved = async (f: Food) => {
-    await api.foodLog.add({
-      date,
-      meal_slot: slot,
-      food_id: f.id,
-      name: f.name,
-      grams: f.serving_g ?? f.last_grams ?? 100,
-      eating_out: 1,
-      kcal_100g: f.kcal_100g,
-      protein_100g: f.protein_100g,
-      carb_100g: f.carb_100g,
-      fat_100g: f.fat_100g,
-    });
+    try {
+      await api.foodLog.add({
+        date,
+        meal_slot: slot,
+        food_id: f.id,
+        name: f.name,
+        grams: f.serving_g ?? f.last_grams ?? 100,
+        eating_out: 1,
+        kcal_100g: f.kcal_100g,
+        protein_100g: f.protein_100g,
+        carb_100g: f.carb_100g,
+        fat_100g: f.fat_100g,
+      });
+    } catch {
+      showToast('Couldn’t log that — try again', { kind: 'error' });
+      return;
+    }
     qc.invalidateQueries({ queryKey: ['foodlog', date] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     goDay();

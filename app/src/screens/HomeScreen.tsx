@@ -1,11 +1,11 @@
 // HomeScreen.tsx — the live dashboard. Tap a favorite to log it; the ring fills + a toast confirms.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Linking, Pressable, View } from 'react-native';
+import { Linking, Pressable, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { applyNumberKey, Button, CalorieRing, Card, CelebrationModal, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, T } from '../components';
+import { applyNumberKey, Button, CalorieRing, Card, CelebrationModal, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, T } from '../components';
 import { api, type SupplementToday, type UsualMeal } from '../lib/api';
 import { slotForNow, todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
@@ -25,8 +25,6 @@ export function HomeScreen() {
   const t = useTheme();
   const nav = useNavigation<Nav>();
   const qc = useQueryClient();
-  const [toast, setToast] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dash = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
   const curSlot = slotForNow();
@@ -43,7 +41,7 @@ export function HomeScreen() {
     mutationFn: (id: number) => api.workouts.complete(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['dashboard'] });
-      flash('Nice work! 💪');
+      showToast('Nice work! 💪');
     },
   });
 
@@ -63,12 +61,6 @@ export function HomeScreen() {
   });
 
   const addTo = (slot: string) => nav.navigate('Food', { screen: 'AddFood', params: { slot, date: todayStr() } });
-
-  function flash(msg: string) {
-    setToast(msg);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setToast(null), 2400);
-  }
 
   if (dash.isLoading || !dash.data) {
     return (
@@ -332,8 +324,6 @@ export function HomeScreen() {
         </View>
       </Screen>
 
-      {toast ? <Toast text={toast} /> : null}
-
       {d.milestone ? (
         <CelebrationModal
           visible
@@ -355,12 +345,16 @@ function SupplementsCard() {
   const q = useQuery({ queryKey: ['supplements-today', date], queryFn: () => api.supplements.today(date) });
   const toggle = useMutation({
     mutationFn: (p: { id: number; taken: boolean }) => api.supplements.toggle(p.id, date, p.taken),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['supplements-today', date] }),
+    onMutate: async (p) => {
+      await qc.cancelQueries({ queryKey: ['supplements-today', date] });
+      const prev = qc.getQueryData<SupplementToday[]>(['supplements-today', date]);
+      qc.setQueryData(['supplements-today', date], (xs?: SupplementToday[]) => (xs ?? []).map((x) => (x.id === p.id ? { ...x, taken: p.taken ? 1 : 0 } : x)));
+      return { prev };
+    },
+    onError: (_e, _p, ctx) => qc.setQueryData(['supplements-today', date], ctx?.prev),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['supplements-today', date] }),
   });
-  const onToggle = (s: SupplementToday) => {
-    qc.setQueryData(['supplements-today', date], (xs?: SupplementToday[]) => (xs ?? []).map((x) => (x.id === s.id ? { ...x, taken: s.taken ? 0 : 1 } : x)));
-    toggle.mutate({ id: s.id, taken: !s.taken });
-  };
+  const onToggle = (s: SupplementToday) => toggle.mutate({ id: s.id, taken: !s.taken });
   if (!q.data?.length) return null;
   const done = q.data.filter((s) => s.taken).length;
   return (
@@ -412,9 +406,16 @@ function UsualMealCard({ meal }: { meal: UsualMeal }) {
   const [open, setOpen] = useState(false);
   const total = Math.round(meal.items.reduce((a, it) => a + (it.kcal_100g * it.grams) / 100, 0));
   const logAll = async (items: UsualLog[]) => {
-    for (const it of items) {
-      if (it.grams <= 0) continue;
-      await api.foodLog.add({ date: todayStr(), meal_slot: meal.slot, food_id: it.food_id, name: it.name, grams: it.grams, kcal_100g: it.kcal_100g, protein_100g: it.protein_100g, carb_100g: it.carb_100g, fat_100g: it.fat_100g });
+    let logged = 0;
+    try {
+      for (const it of items) {
+        if (it.grams <= 0) continue;
+        await api.foodLog.add({ date: todayStr(), meal_slot: meal.slot, food_id: it.food_id, name: it.name, grams: it.grams, kcal_100g: it.kcal_100g, protein_100g: it.protein_100g, carb_100g: it.carb_100g, fat_100g: it.fat_100g });
+        logged++;
+      }
+      showToast(`Your usual ${SLOT_NOUN[meal.slot] ?? meal.slot} is logged ✓`);
+    } catch {
+      showToast(logged ? 'Only some of that saved — check the day view' : 'Couldn’t log that — try again', { kind: 'error' });
     }
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     qc.invalidateQueries({ queryKey: ['usual'] });
@@ -543,39 +544,5 @@ function Stat({ label, value, muted }: { label: string; value: number; muted?: b
         {value}
       </T>
     </View>
-  );
-}
-
-function Toast({ text }: { text: string }) {
-  const t = useTheme();
-  const v = useRef(new Animated.Value(0)).current;
-  React.useEffect(() => {
-    v.setValue(0);
-    Animated.timing(v, { toValue: 1, duration: 260, easing: Easing.out(Easing.back(1.6)), useNativeDriver: true }).start();
-  }, [text, v]);
-  return (
-    <Animated.View
-      style={{
-        position: 'absolute',
-        bottom: 24,
-        alignSelf: 'center',
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 9,
-        paddingVertical: 12,
-        paddingHorizontal: 18,
-        borderRadius: 999,
-        backgroundColor: t.text,
-        opacity: v,
-        transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }],
-      }}
-    >
-      <View style={{ width: 22, height: 22, borderRadius: 999, backgroundColor: t.success, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon name="check" size={14} stroke={3} color="#fff" />
-      </View>
-      <T w={800} size={15} color={t.bg}>
-        Logged · {text}
-      </T>
-    </Animated.View>
   );
 }

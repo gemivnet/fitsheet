@@ -23,4 +23,5 @@ export { TextField, Sheet } from './forms';
 export { AutocompleteField } from './AutocompleteField';
 export { NumberPad, NumberField, useNumberField, applyNumberKey } from './NumberPad';
 export { ReminderSync } from './ReminderSync';
+export { ToastHost, showToast, type ToastOptions } from './Toast';
 export { CalorieCalculator } from './CalorieCalculator';

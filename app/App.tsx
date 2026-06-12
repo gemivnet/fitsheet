@@ -19,7 +19,7 @@ import {
 } from '@expo-google-fonts/nunito';
 import { ThemeProvider, useTheme } from './src/theme';
 import { RootTabs } from './src/navigation/RootTabs';
-import { ReminderSync, T } from './src/components';
+import { ReminderSync, T, ToastHost } from './src/components';
 import { OnboardingScreen } from './src/screens';
 import { api } from './src/lib/api';
 import { queryClient } from './src/lib/query';
@@ -51,6 +51,7 @@ export default function App() {
           <ThemeProvider>
             <Gate />
             <ReminderSync />
+            <ToastHost />
             <StatusBar style={dark ? 'light' : 'dark'} />
           </ThemeProvider>
         </SafeAreaProvider>

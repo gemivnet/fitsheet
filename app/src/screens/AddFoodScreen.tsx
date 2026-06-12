@@ -3,11 +3,11 @@
 // After logging, the screen STAYS OPEN and the list re-ranks to what you usually log next.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AutocompleteField, Button, Card, Chip, Icon, type IconName, NumberPad, Screen, SectionLabel, Sheet, T, TextField, useNumberField } from '../components';
+import { AutocompleteField, Button, Card, Chip, Icon, type IconName, NumberPad, Screen, SectionLabel, Sheet, showToast, T, TextField, useNumberField } from '../components';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { DiningOutTab } from './DiningOutScreen';
 import { DishBuilderTab } from './DishBuilderScreen';
@@ -59,14 +59,7 @@ export function AddFoodScreen({ navigation, route }: Props) {
   const [slot, setSlot] = useState(route.params.slot);
   const [tab, setTab] = useState('Find');
   const [picked, setPicked] = useState<Picked | null>(null);
-  const [toast, setToast] = useState<{ name: string; id: number } | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const flash = (name: string, id: number) => {
-    setToast({ name, id });
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 4000);
-  };
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['foodlog', date] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
@@ -123,16 +116,14 @@ export function AddFoodScreen({ navigation, route }: Props) {
     onSuccess: ({ id, name }) => {
       invalidate();
       setPicked(null);
-      flash(name, id); // stay open — the list re-ranks to what comes next
+      // stay open — the list re-ranks to what comes next
+      showToast(`${name} logged`, { actionLabel: 'Undo', onAction: () => undo.mutate(id) });
     },
   });
 
   const undo = useMutation({
     mutationFn: (id: number) => api.foodLog.remove(id),
-    onSuccess: () => {
-      invalidate();
-      setToast(null);
-    },
+    onSuccess: invalidate,
   });
 
   // One-tap re-log of a saved food's remembered amount.
@@ -205,8 +196,6 @@ export function AddFoodScreen({ navigation, route }: Props) {
 
         <AmountSheet picked={picked} slot={slot} onClose={() => setPicked(null)} onAdd={(grams, food, mode, servingG, unitName, slotSel) => add.mutate({ grams, food, mode, servingG, unitName, slot: slotSel })} />
       </Screen>
-
-      {toast ? <UndoToast name={toast.name} onUndo={() => undo.mutate(toast.id)} /> : null}
     </View>
   );
 }
@@ -451,8 +440,8 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
   };
   const onParseError = (e: any) => setError(e?.status === 503 ? 'AI is off — add ANTHROPIC_API_KEY on the server.' : 'Couldn’t read that — try the Find tab.');
 
-  const parse = useMutation({ mutationFn: () => api.ai.parseFood(text), onSuccess: (out) => applyItems(out.items), onError: onParseError });
-  const parsePhoto = useMutation({ mutationFn: (form: FormData) => api.ai.parseFoodPhoto(form), onSuccess: (out) => applyItems(out.items), onError: onParseError });
+  const parse = useMutation({ mutationFn: () => api.ai.parseFood(text), onSuccess: (out) => applyItems(out.items), onError: onParseError, meta: { suppressErrorToast: true } });
+  const parsePhoto = useMutation({ mutationFn: (form: FormData) => api.ai.parseFoodPhoto(form), onSuccess: (out) => applyItems(out.items), onError: onParseError, meta: { suppressErrorToast: true } });
 
   const pickNotes = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
@@ -472,9 +461,18 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
 
   const logAll = async () => {
     if (!items) return;
-    for (const it of items) {
-      if (it.grams <= 0) continue;
-      await api.foodLog.add({ date, meal_slot: slot, name: it.name, grams: it.grams, kcal_100g: it.kcal_100g, protein_100g: it.protein_100g, carb_100g: it.carb_100g, fat_100g: it.fat_100g });
+    let logged = 0;
+    try {
+      for (const it of items) {
+        if (it.grams <= 0) continue;
+        await api.foodLog.add({ date, meal_slot: slot, name: it.name, grams: it.grams, kcal_100g: it.kcal_100g, protein_100g: it.protein_100g, carb_100g: it.carb_100g, fat_100g: it.fat_100g });
+        logged++;
+      }
+    } catch {
+      showToast(logged ? 'Only some of that saved — check the day view' : 'Couldn’t log that — try again', { kind: 'error' });
+      qc.invalidateQueries({ queryKey: ['foodlog', date] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      return;
     }
     qc.invalidateQueries({ queryKey: ['foodlog', date] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
@@ -829,47 +827,5 @@ function StatTile({ label, value, unit, sub, active, onPress }: { label: string;
         </T>
       ) : null}
     </Pressable>
-  );
-}
-
-// ── undo toast ───────────────────────────────────────────────────────────────
-
-function UndoToast({ name, onUndo }: { name: string; onUndo: () => void }) {
-  const t = useTheme();
-  const v = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    v.setValue(0);
-    Animated.timing(v, { toValue: 1, duration: 240, easing: Easing.out(Easing.back(1.5)), useNativeDriver: true }).start();
-  }, [name, v]);
-  return (
-    <Animated.View
-      style={{
-        position: 'absolute',
-        bottom: 24,
-        alignSelf: 'center',
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 14,
-        paddingVertical: 12,
-        paddingLeft: 16,
-        paddingRight: 8,
-        borderRadius: 999,
-        backgroundColor: t.text,
-        opacity: v,
-        transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
-      }}
-    >
-      <View style={{ width: 22, height: 22, borderRadius: 999, backgroundColor: t.success, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon name="check" size={14} stroke={3} color="#fff" />
-      </View>
-      <T w={800} size={15} color={t.bg} numberOfLines={1}>
-        {name} logged
-      </T>
-      <Pressable onPress={onUndo} hitSlop={8} style={{ paddingVertical: 6, paddingHorizontal: 14, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.16)' }}>
-        <T w={800} size={14} color="#fff">
-          Undo
-        </T>
-      </Pressable>
-    </Animated.View>
   );
 }
