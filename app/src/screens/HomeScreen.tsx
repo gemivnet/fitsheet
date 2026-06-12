@@ -1,13 +1,13 @@
 // HomeScreen.tsx — the live dashboard. Tap a favorite to log it; the ring fills + a toast confirms.
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Linking, Pressable, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, CalorieRing, Card, CelebrationModal, Icon, MacroBar, ProgressBar, Screen, SectionLabel, T } from '../components';
-import { api } from '../lib/api';
-import { todayStr } from '../lib/date';
+import { applyNumberKey, Button, CalorieRing, Card, CelebrationModal, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, T } from '../components';
+import { api, type UsualMeal } from '../lib/api';
+import { slotForNow, todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
 import { useTheme } from '../theme';
 import type { RootTabParams } from '../navigation/types';
@@ -29,6 +29,8 @@ export function HomeScreen() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dash = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
+  const curSlot = slotForNow();
+  const usual = useQuery({ queryKey: ['usual', curSlot, todayStr()], queryFn: () => api.foodLog.usual(curSlot, todayStr()) });
 
   useFocusEffect(useCallback(() => void dash.refetch(), [dash.refetch]));
 
@@ -103,6 +105,8 @@ export function HomeScreen() {
         </View>
 
         <CheckinCard />
+
+        {usual.data?.found && (today.slots?.[usual.data.slot] ?? []).length === 0 ? <UsualMealCard meal={usual.data} /> : null}
 
         {/* today's calories */}
         <Card pad={24} style={{ marginBottom: 16 }}>
@@ -334,6 +338,128 @@ function CheckinCard() {
         </T>
       </View>
     </Card>
+  );
+}
+
+const SLOT_NOUN: Record<string, string> = { breakfast: 'breakfast', lunch: 'lunch', dinner: 'dinner', snacks: 'snack' };
+type UsualLog = { food_id: number | null; name: string; grams: number; kcal_100g: number; protein_100g: number; carb_100g: number; fat_100g: number };
+
+function UsualMealCard({ meal }: { meal: UsualMeal }) {
+  const t = useTheme();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const total = Math.round(meal.items.reduce((a, it) => a + (it.kcal_100g * it.grams) / 100, 0));
+  const logAll = async (items: UsualLog[]) => {
+    for (const it of items) {
+      if (it.grams <= 0) continue;
+      await api.foodLog.add({ date: todayStr(), meal_slot: meal.slot, food_id: it.food_id, name: it.name, grams: it.grams, kcal_100g: it.kcal_100g, protein_100g: it.protein_100g, carb_100g: it.carb_100g, fat_100g: it.fat_100g });
+    }
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
+    qc.invalidateQueries({ queryKey: ['usual'] });
+    qc.invalidateQueries({ queryKey: ['foodlog'] });
+  };
+  return (
+    <Card pad={18} style={{ marginBottom: 16, backgroundColor: t.accentSofter }}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
+        <SectionLabel>Having your usual {SLOT_NOUN[meal.slot] ?? meal.slot}?</SectionLabel>
+        <T num w={800} size={15} color={t.accentPress}>
+          {total} kcal
+        </T>
+      </View>
+      <T w={700} size={14} color={t.text2} numberOfLines={2} style={{ marginBottom: 14, lineHeight: 20 }}>
+        {meal.items.map((i) => i.name).join(' · ')}
+      </T>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Button full icon="check" onPress={() => logAll(meal.items)}>
+            Log it
+          </Button>
+        </View>
+        <Button variant="soft" icon="edit" onPress={() => setOpen(true)}>
+          Tweak
+        </Button>
+      </View>
+      <UsualMealSheet
+        visible={open}
+        meal={meal}
+        onClose={() => setOpen(false)}
+        onLog={async (items) => {
+          await logAll(items);
+          setOpen(false);
+        }}
+      />
+    </Card>
+  );
+}
+
+type EditItem = { food_id: number | null; name: string; gramsStr: string; kcal_100g: number; protein_100g: number; carb_100g: number; fat_100g: number; on: boolean };
+
+function UsualMealSheet({ visible, meal, onClose, onLog }: { visible: boolean; meal: UsualMeal; onClose: () => void; onLog: (items: UsualLog[]) => void }) {
+  const t = useTheme();
+  const [items, setItems] = useState<EditItem[]>([]);
+  const [active, setActive] = useState<number | null>(null);
+  const fresh = useRef(true);
+  useEffect(() => {
+    if (visible) {
+      setItems(meal.items.map((i) => ({ food_id: i.food_id, name: i.name, gramsStr: String(i.grams), kcal_100g: i.kcal_100g, protein_100g: i.protein_100g, carb_100g: i.carb_100g, fat_100g: i.fat_100g, on: true })));
+      setActive(null);
+    }
+  }, [visible, meal]);
+  const press = (k: string) => {
+    if (active == null) return;
+    setItems((xs) => xs.map((it, i) => (i === active ? { ...it, gramsStr: applyNumberKey(it.gramsStr, k, fresh.current) } : it)));
+    fresh.current = false;
+  };
+  const focus = (i: number) => {
+    setActive(i);
+    fresh.current = true;
+  };
+  const toggle = (i: number) => setItems((xs) => xs.map((it, idx) => (idx === i ? { ...it, on: !it.on } : it)));
+  const included: UsualLog[] = items.filter((i) => i.on && Number(i.gramsStr) > 0).map((i) => ({ food_id: i.food_id, name: i.name, grams: Number(i.gramsStr), kcal_100g: i.kcal_100g, protein_100g: i.protein_100g, carb_100g: i.carb_100g, fat_100g: i.fat_100g }));
+  const total = Math.round(included.reduce((a, it) => a + (it.kcal_100g * it.grams) / 100, 0));
+  return (
+    <Sheet visible={visible} onClose={onClose} title="Your usual">
+      {items.map((it, i) => {
+        const g = Number(it.gramsStr) || 0;
+        return (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 }}>
+            <Pressable onPress={() => toggle(i)} hitSlop={6}>
+              <View style={{ width: 24, height: 24, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: it.on ? t.accent : 'transparent', borderWidth: it.on ? 0 : 1.8, borderColor: t.hairline }}>
+                {it.on ? <Icon name="check" size={15} stroke={3} color="#fff" /> : null}
+              </View>
+            </Pressable>
+            <T w={700} size={15} color={it.on ? t.text : t.text3} numberOfLines={1} style={{ flex: 1 }}>
+              {it.name}
+            </T>
+            <Pressable
+              onPress={() => focus(i)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: active === i ? t.accentSoft : t.surface, borderWidth: 1.5, borderColor: active === i ? t.accent : t.hairline, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 }}
+            >
+              <T num w={800} size={15}>
+                {it.gramsStr || '0'}
+              </T>
+              <T w={700} size={11} color={t.text3}>
+                g
+              </T>
+            </Pressable>
+            <T num w={800} size={14} color={t.text3} style={{ width: 42, textAlign: 'right' }}>
+              {Math.round((it.kcal_100g * g) / 100)}
+            </T>
+          </View>
+        );
+      })}
+      <View style={{ marginTop: 8, marginBottom: 14 }}>
+        {active == null ? (
+          <T w={600} size={13} color={t.text3} style={{ textAlign: 'center', marginBottom: 8 }}>
+            Tap a gram value to adjust · uncheck to skip
+          </T>
+        ) : null}
+        <NumberPad onKey={press} keyHeight={50} />
+      </View>
+      <Button full size="lg" icon="check" onPress={() => onLog(included)}>
+        Log {included.length} · {total} kcal
+      </Button>
+    </Sheet>
   );
 }
 

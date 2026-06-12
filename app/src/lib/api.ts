@@ -231,6 +231,22 @@ export interface Analytics {
   };
 }
 
+export interface UsualItem {
+  food_id: number | null;
+  name: string;
+  grams: number;
+  kcal_100g: number;
+  protein_100g: number;
+  carb_100g: number;
+  fat_100g: number;
+}
+export interface UsualMeal {
+  found: boolean;
+  slot: string;
+  days_seen: number;
+  items: UsualItem[];
+}
+
 export interface NewLogEntry {
   date: string;
   meal_slot: string;
@@ -313,6 +329,7 @@ export const api = {
     snooze: (date: string, snoozed: boolean) => req<DaySummary>('POST', '/api/food-log/snooze', { date, snoozed }),
     mealComplete: (date: string, meal_slot: string, complete: boolean) => req<DaySummary>('POST', '/api/food-log/meal-complete', { date, meal_slot, complete }),
     diningStats: (date: string) => req<{ this_week: number; last_week: number }>('GET', `/api/food-log/dining-stats?date=${date}`),
+    usual: (slot: string, date: string) => req<UsualMeal>('GET', `/api/food-log/usual?slot=${slot}&date=${date}`),
     update: (id: number, p: { grams?: number; meal_slot?: string }) => req<DaySummary>('PATCH', `/api/food-log/${id}`, p),
     remove: (id: number) => req<DaySummary>('DELETE', `/api/food-log/${id}`),
   },

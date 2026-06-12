@@ -4,6 +4,7 @@ import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
 import { parseFoodPhoto } from '../ai/parseFoodPhoto';
 import { parseRecipe } from '../ai/parseRecipe';
+import { personalFoodsHint, restaurantHistory } from '../ai/personalContext';
 import { claudeStream } from '../ai/client';
 import { complete } from '../ai/complete';
 import { cleanComponents, FULL_MENU_SYSTEM, fullMenuContent, restaurantFullMenu, restaurantItem, salvageObjects } from '../ai/restaurantItem';
@@ -54,7 +55,7 @@ export function aiRouter(db: DB): Router {
     const text = String(req.body?.text ?? '').trim();
     if (!text) return res.status(400).json({ error: 'text required' });
     try {
-      res.json({ items: await parseFood(text) });
+      res.json({ items: await parseFood(text, personalFoodsHint(db)) });
     } catch (e) {
       res.status(502).json({ error: 'parse_failed', detail: String(e) });
     }
@@ -96,7 +97,7 @@ export function aiRouter(db: DB): Router {
     if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
     try {
       const menuNames = (db.prepare('SELECT name FROM restaurant_components WHERE restaurant = ? ORDER BY sort_order, name').all(restaurant) as { name: string }[]).map((r2) => r2.name);
-      const parsed = await restaurantItem(restaurant, item, menuNames);
+      const parsed = await restaurantItem(restaurant, item, menuNames, restaurantHistory(db, restaurant));
       if (parsed) {
         const ts = nowIso();
         db.prepare(

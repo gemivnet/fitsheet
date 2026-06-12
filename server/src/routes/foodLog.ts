@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { invalidatePersonalContext } from '../ai/personalContext';
 import { writeAudit } from '../audit';
 import type { DB } from '../db/index';
 import { getSettings } from '../settings';
@@ -95,6 +96,40 @@ export function foodLogRouter(db: DB): Router {
     res.json(daySummary(db, date));
   });
 
+  // "Your usual meal": foods she logs in this slot on most days → a template she can tweak + log.
+  r.get('/usual', (req, res) => {
+    const slot = SLOTS.includes(req.query.slot as (typeof SLOTS)[number]) ? (req.query.slot as string) : 'breakfast';
+    const date = (req.query.date as string) || todayStr();
+    const from = addDaysStr(date, -14);
+    const to = addDaysStr(date, -1);
+    const totalDays = (db.prepare('SELECT COUNT(DISTINCT day_date) AS d FROM food_log WHERE meal_slot = ? AND day_date BETWEEN ? AND ?').get(slot, from, to) as { d: number }).d;
+    if (totalDays < 2) return res.json({ found: false, slot, days_seen: totalDays, items: [] });
+    const rows = db
+      .prepare(
+        'SELECT name, MAX(food_id) AS food_id, COUNT(DISTINCT day_date) AS days, AVG(grams) AS grams, ' +
+          'AVG(CASE WHEN grams > 0 THEN kcal * 100.0 / grams ELSE 0 END) AS kcal_100g, ' +
+          'AVG(CASE WHEN grams > 0 THEN protein * 100.0 / grams ELSE 0 END) AS protein_100g, ' +
+          'AVG(CASE WHEN grams > 0 THEN carb * 100.0 / grams ELSE 0 END) AS carb_100g, ' +
+          'AVG(CASE WHEN grams > 0 THEN fat * 100.0 / grams ELSE 0 END) AS fat_100g ' +
+          'FROM food_log WHERE meal_slot = ? AND day_date BETWEEN ? AND ? GROUP BY name',
+      )
+      .all(slot, from, to) as { name: string; food_id: number | null; days: number; grams: number; kcal_100g: number; protein_100g: number; carb_100g: number; fat_100g: number }[];
+    const threshold = Math.max(2, Math.ceil(totalDays * 0.5)); // appears on at least half the logged days
+    const items = rows
+      .filter((r2) => r2.days >= threshold)
+      .sort((a, b) => b.days - a.days)
+      .map((r2) => ({
+        food_id: r2.food_id ?? null,
+        name: r2.name,
+        grams: Math.round(r2.grams),
+        kcal_100g: Math.round(r2.kcal_100g),
+        protein_100g: round(r2.protein_100g, 1),
+        carb_100g: round(r2.carb_100g, 1),
+        fat_100g: round(r2.fat_100g, 1),
+      }));
+    res.json({ found: items.length >= 1, slot, days_seen: totalDays, items });
+  });
+
   // Gentle "eating out" counter: distinct meals (day+slot) eaten out this week vs last week.
   r.get('/dining-stats', (req, res) => {
     const date = (req.query.date as string) || todayStr();
@@ -157,6 +192,7 @@ export function foodLogRouter(db: DB): Router {
       db.prepare('UPDATE foods SET pref_unit_mode = COALESCE(?, pref_unit_mode), last_grams = ?, updated_at = ? WHERE id = ?').run(um, grams, ts, b.food_id);
     }
     const addedId = Number(info.lastInsertRowid);
+    invalidatePersonalContext(); // her habits just changed
     writeAudit(db, { entity: 'food_log', entityId: addedId, action: 'create' });
     res.json({ ...daySummary(db, date), added_id: addedId });
   });

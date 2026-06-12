@@ -11,13 +11,15 @@ export interface ParsedFood {
   fat_g: number;
 }
 
-export async function parseFood(text: string): Promise<ParsedFood[]> {
+export async function parseFood(text: string, personalFoods = ''): Promise<ParsedFood[]> {
+  // Single-user bias: when her description matches something she logs a lot, use that food + her usual portion.
+  const hint = personalFoods ? `\nThis person commonly logs these foods (use the matching name and their usual portion when it fits): ${personalFoods}.` : '';
   const out = await claudeText({
     system:
       'You convert a casual meal description into individual foods with realistic gram amounts and ' +
       'nutrition. Estimate typical portion sizes when amounts are not given. Be reasonable, not exact.',
     content:
-      `Parse this into foods: "${text}".\n` +
+      `Parse this into foods: "${text}".${hint}\n` +
       'Reply ONLY a JSON array, no prose: ' +
       '[{"name": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number}]',
     maxTokens: 1024,

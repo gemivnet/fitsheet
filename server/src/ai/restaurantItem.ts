@@ -85,14 +85,18 @@ export function cleanComponents(arr: any[]): RestaurantComponent[] {
 // has all the options up front — not just the parts of orders she's built. Prompt is shared with
 // the streaming route.
 export const FULL_MENU_SYSTEM =
-  'You list the COMPLETE build-your-own menu for a chain restaurant: every base, protein, bean, ' +
-  "salsa, topping, cheese, side, and sauce a customer can choose, using the chain's ACTUAL " +
-  'published nutrition for one standard portion/scoop as served. Be thorough — include ALL the ' +
-  'standard options (e.g. for Chipotle: white & brown rice; chicken, steak, barbacoa, carnitas, ' +
-  'sofritas, veggie; black & pinto beans; all four salsas; cheese, sour cream, guacamole, lettuce, ' +
-  'fajita veggies; chips, hard/soft tacos, tortillas). Give each a category (base, protein, beans, ' +
-  'topping, salsa, cheese, side, sauce, other), portion grams, calories, protein/carb/fat grams, ' +
-  'and default_on (true ONLY for what a basic order typically includes). Use real published values.';
+  'You build a per-restaurant menu so the user can log what they ate. FIRST decide the restaurant type:\n' +
+  '• BUILD-YOUR-OWN chains (Chipotle, Subway, Cava, Qdoba, Sweetgreen, Moe\'s — bowl/sub/salad makers): ' +
+  'list the individual build-your-own COMPONENTS (every base, protein, bean, salsa, topping, cheese, ' +
+  'side, sauce) for one standard portion/scoop, and mark the ones a standard order includes default_on:true.\n' +
+  '• FIXED-MENU chains (McDonald\'s, Wendy\'s, Burger King, Chick-fil-A, Taco Bell, Popeyes, Raising Cane\'s, ' +
+  'In-N-Out, etc.): list the popular COMPLETE menu items as WHOLE items (e.g. "Big Mac", "10 pc Chicken ' +
+  'McNuggets", "Medium Fries", "Spicy Chicken Sandwich", a Medium Coke) with their full published nutrition — ' +
+  'do NOT break an item into ingredients. Mark everything default_on:false (the user picks what they ordered).\n' +
+  'Use the chain\'s ACTUAL published nutrition. Give each a category — for fixed menus the item type ' +
+  '(burger, chicken, sandwich, nuggets, side, drink, breakfast, dessert); for build-your-own (base, protein, ' +
+  'beans, topping, salsa, cheese, side, sauce, other) — plus portion grams, calories, and protein/carb/fat ' +
+  'grams. Be reasonably complete for the popular options.';
 export const fullMenuContent = (restaurant: string): string =>
   `Restaurant: ${restaurant}\n\n` +
   'Reply ONLY a JSON array, no prose: ' +
@@ -103,27 +107,33 @@ export async function restaurantFullMenu(restaurant: string): Promise<Restaurant
   return cleanComponents(salvageObjects(out));
 }
 
-export async function restaurantItem(restaurant: string, item: string, menuNames: string[] = []): Promise<RestaurantItem | null> {
+export async function restaurantItem(restaurant: string, item: string, menuNames: string[] = [], history: string[] = []): Promise<RestaurantItem | null> {
   // Menu-aware: when the restaurant already has a component menu, reuse those EXACT names so the
   // order's parts line up with the menu instead of creating near-duplicates.
   const menuHint = menuNames.length
     ? `\n\nThis restaurant already has these menu components — when a part of the order matches one, use its EXACT name from this list (verbatim), and only add a NEW component if the order truly includes something not listed:\n${menuNames.join(', ')}`
     : '';
+  // Single-user bias: this specific person's usual order here → pre-tick HER actuals.
+  const historyHint = history.length
+    ? `\n\nThis specific person usually gets these here: ${history.join(', ')}. When the order is consistent with that, set default_on:true for those so HER usual is pre-selected.`
+    : '';
   const out = await claudeText({
     system:
-      'You help someone log a restaurant meal using the chain\'s ACTUAL OFFICIAL PUBLISHED nutrition. ' +
-      'Most US chains (McDonald\'s, Chipotle, Subway, Chick-fil-A, Taco Bell, etc.) publish full nutrition ' +
-      'for every menu item and build-your-own component — reproduce those real published numbers, not rough ' +
-      'guesses. Given a chain restaurant and the order, break it into the individual build-your-own ' +
-      'components a person assembles or receives — the base, the protein, then EACH topping, side, sauce, ' +
-      'and add-on as a separate line. For one standard portion as served, give the published calories and ' +
-      'protein/carb/fat in grams, plus the portion weight in grams. Mark components typically included by ' +
-      'default with default_on:true, and optional add-ons (guac, chips, extra cheese, large size, etc.) ' +
-      'false. Give each component a category from: base, protein, beans, topping, salsa, cheese, side, ' +
-      'sauce, other. Only include parts of this order plus what it standardly comes with — never invent ' +
-      'unrelated items. If a value is genuinely not published, give your best estimate but keep it realistic.',
+      'You help someone log a restaurant meal using the chain\'s ACTUAL OFFICIAL PUBLISHED nutrition — ' +
+      'reproduce real published numbers, not rough guesses. Given a chain and the order, return its parts as ' +
+      '"components". HOW you split it depends on the restaurant:\n' +
+      '• BUILD-YOUR-OWN chains (Chipotle, Subway, Cava, Qdoba, bowl/sub/salad makers): break the order into ' +
+      'the individual components a person assembles — base, protein, then EACH topping/side/sauce as its own ' +
+      'line. Mark standard inclusions default_on:true and optional add-ons (guac, chips, extra cheese) false.\n' +
+      '• FIXED-MENU chains (McDonald\'s, Wendy\'s, Chick-fil-A, Taco Bell, Burger King, etc.): each "component" ' +
+      'is a WHOLE menu item the person ordered (e.g. "Big Mac", "Medium Fries") with its full nutrition — do ' +
+      'NOT break items into ingredients. Mark each item default_on:true (they ordered it).\n' +
+      'For each line give the published calories, protein/carb/fat grams, portion grams, and a category ' +
+      '(build-your-own: base, protein, beans, topping, salsa, cheese, side, sauce, other; fixed: burger, ' +
+      'chicken, sandwich, nuggets, side, drink, breakfast, dessert). Only include this order plus what it ' +
+      'standardly comes with. If a value is genuinely not published, estimate realistically.',
     content:
-      `Restaurant: ${restaurant}\nOrder: ${item}${menuHint}\n\n` +
+      `Restaurant: ${restaurant}\nOrder: ${item}${menuHint}${historyHint}\n\n` +
       'Reply ONLY JSON, no prose: ' +
       '{"name": string, "components": [{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}], "note": string}',
     maxTokens: 1500,
