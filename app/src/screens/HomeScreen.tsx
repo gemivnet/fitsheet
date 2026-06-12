@@ -6,7 +6,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { applyNumberKey, Button, CalorieRing, Card, CelebrationModal, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, T } from '../components';
-import { api, type SupplementToday, type UsualMeal } from '../lib/api';
+import { api, type Suggestion, type SupplementToday, type UsualMeal } from '../lib/api';
 import { slotForNow, todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
 import { useTheme } from '../theme';
@@ -119,7 +119,11 @@ export function HomeScreen() {
         ) : (
           <>
             <CheckinCard />
-            {usual.data?.found && (today.slots?.[usual.data.slot] ?? []).length === 0 ? <UsualMealCard meal={usual.data} /> : null}
+            {usual.data?.found && (today.slots?.[usual.data.slot] ?? []).length === 0 ? (
+              <UsualMealCard meal={usual.data} />
+            ) : (today.slots?.[curSlot] ?? []).length === 0 ? (
+              <QuickLogSuggestions slot={curSlot} />
+            ) : null}
           </>
         )}
 
@@ -191,7 +195,7 @@ export function HomeScreen() {
             return (
               <View key={key} style={{ paddingVertical: 10, borderBottomWidth: mi === MEALS.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Pressable onPress={() => mealComplete.mutate({ slot: key, on: !done })} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1, minWidth: 0 }}>
+                  <Pressable onPress={() => mealComplete.mutate({ slot: key, on: !done })} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1, minWidth: 0 }}>
                     <View
                       style={{
                         width: 22,
@@ -215,8 +219,8 @@ export function HomeScreen() {
                       </T>
                     ) : null}
                   </Pressable>
-                  <Pressable onPress={() => addTo(key)} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 999, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon name="plus" size={17} stroke={2.6} color={t.accentPress} />
+                  <Pressable onPress={() => addTo(key)} hitSlop={8} style={{ width: 38, height: 38, borderRadius: 999, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="plus" size={19} stroke={2.6} color={t.accentPress} />
                   </Pressable>
                 </View>
                 {items.map((it) => (
@@ -393,6 +397,58 @@ function CheckinCard() {
           {c.data.note}
         </T>
       </View>
+    </Card>
+  );
+}
+
+// One-tap logging of the foods she most likely wants right now (remembered amounts).
+function QuickLogSuggestions({ slot }: { slot: string }) {
+  const t = useTheme();
+  const qc = useQueryClient();
+  const date = todayStr();
+  const sugg = useQuery({ queryKey: ['foods', 'suggestions', slot, date], queryFn: () => api.foods.suggestions({ slot, date }) });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
+    qc.invalidateQueries({ queryKey: ['foodlog'] });
+    qc.invalidateQueries({ queryKey: ['foods'] });
+    qc.invalidateQueries({ queryKey: ['usual'] });
+  };
+  const undo = useMutation({ mutationFn: (id: number) => api.foodLog.remove(id), onSuccess: invalidate });
+  const add = useMutation({
+    mutationFn: async (f: Suggestion) => {
+      const grams = f.last_grams ?? f.serving_g ?? 100;
+      const res = await api.foodLog.add({ date, meal_slot: slot, food_id: f.id, name: f.name, grams, kcal_100g: f.kcal_100g, protein_100g: f.protein_100g, carb_100g: f.carb_100g, fat_100g: f.fat_100g });
+      return { id: res.added_id, name: f.name };
+    },
+    onSuccess: ({ id, name }) => {
+      invalidate();
+      showToast(`${name} logged`, { actionLabel: 'Undo', onAction: () => undo.mutate(id) });
+    },
+  });
+  const top = (sugg.data ?? []).slice(0, 3);
+  if (!top.length) return null;
+  return (
+    <Card pad={18} style={{ marginBottom: 16 }}>
+      <SectionLabel style={{ marginBottom: 2 }}>One tap to log · {SLOT_NOUN[slot] ?? slot}</SectionLabel>
+      {top.map((f, i) => {
+        const grams = f.last_grams ?? f.serving_g ?? 100;
+        return (
+          <View key={f.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, borderBottomWidth: i === top.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <T w={800} size={15} numberOfLines={1}>
+                {f.name}
+              </T>
+              <T w={700} size={12} color={t.text3} numberOfLines={1}>
+                {Math.round(grams)} g · {Math.round((f.kcal_100g * grams) / 100)} kcal
+                {f.reason ? ` · ${f.reason}` : ''}
+              </T>
+            </View>
+            <Pressable onPress={() => add.mutate(f)} hitSlop={8} style={{ width: 44, height: 44, borderRadius: 999, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="plus" size={22} stroke={2.8} color="#fff" />
+            </Pressable>
+          </View>
+        );
+      })}
     </Card>
   );
 }

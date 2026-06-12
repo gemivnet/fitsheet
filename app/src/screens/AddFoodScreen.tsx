@@ -60,10 +60,14 @@ export function AddFoodScreen({ navigation, route }: Props) {
   const [tab, setTab] = useState('Find');
   const [picked, setPicked] = useState<Picked | null>(null);
 
+  // Leaving the screen mid-pick shouldn't leave a half-open amount sheet for next time.
+  useEffect(() => navigation.addListener('blur', () => setPicked(null)), [navigation]);
+
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['foodlog', date] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     qc.invalidateQueries({ queryKey: ['foods'] });
+    qc.invalidateQueries({ queryKey: ['usual'] });
   };
 
   const add = useMutation({
@@ -690,10 +694,14 @@ function AmountSheet({
     setField('amount');
     setFresh(true);
   };
+  // Quick amounts, with "what you had last time" first so one tap restores it.
+  const lastQuick = picked.last_grams ? (effMode === 'servings' && pieceG ? trimNum(picked.last_grams / pieceG) : trimNum(picked.last_grams)) : null;
   const quickChips =
     effMode === 'servings'
-      ? ['1', '2', '3', '4']
-      : Array.from(new Set([...(pieceG ? [trimNum(pieceG), trimNum(pieceG * 2)] : []), '50', '100', '150', '200']));
+      ? Array.from(new Set([...(lastQuick ? [lastQuick] : []), '1', '2', '3', '4']))
+      : Array.from(new Set([...(lastQuick ? [lastQuick] : []), ...(pieceG ? [trimNum(pieceG), trimNum(pieceG * 2)] : []), '50', '100', '150', '200']));
+  const unitWord = piecesLabel.toLowerCase();
+  const showPieceEditor = field === 'piece' || effMode === 'servings';
 
   return (
     <Sheet visible={!!picked} onClose={onClose} title={picked.name}>
@@ -703,47 +711,81 @@ function AmountSheet({
         </T>
       ) : null}
 
-      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
-        <StatTile label="Grams" value={trimNum(grams)} unit="g" active={field === 'amount' && effMode === 'grams'} onPress={() => pickAmount('grams')} />
-        <StatTile
-          label={piecesLabel}
-          value={canUnits ? (count != null ? trimNum(count) : '—') : 'Set'}
-          sub={canUnits ? undefined : 'tap to set size'}
-          active={field === 'amount' && effMode === 'servings'}
-          onPress={() => pickAmount('servings')}
-        />
+      {/* count in grams or in her named pieces — one obvious toggle */}
+      <View style={{ flexDirection: 'row', gap: 4, padding: 4, backgroundColor: t.surface2, borderRadius: 14, borderWidth: 1, borderColor: t.hairline, marginBottom: canUnits ? 14 : 8 }}>
+        <UnitSeg label="Grams" on={effMode === 'grams' && field !== 'piece'} onPress={() => pickAmount('grams')} />
+        {canUnits ? <UnitSeg label={piecesLabel} on={effMode === 'servings' && field !== 'piece'} onPress={() => pickAmount('servings')} /> : null}
       </View>
-
-      {/* piece editor — name it ("sausage") + how many grams it weighs; remembered on the food */}
-      <View
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, marginBottom: 12, backgroundColor: field === 'piece' ? t.accentSoft : t.surface2, borderWidth: 1.5, borderColor: field === 'piece' ? t.accent : t.hairline }}
-      >
-        <T w={700} size={14} color={t.text2}>
-          1
-        </T>
-        <TextInput
-          value={unitName}
-          onChangeText={setUnitName}
-          placeholder="piece (e.g. sausage)"
-          placeholderTextColor={t.text3}
-          style={{ flex: 1, fontFamily: Font[800], fontSize: 15, color: t.text, paddingVertical: 6 }}
-        />
-        <T w={700} size={14} color={t.text2}>
-          =
-        </T>
-        <Pressable
-          onPress={() => {
-            setField('piece');
-            setFresh(true);
-          }}
-          hitSlop={8}
-          style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 9, backgroundColor: t.surface, borderWidth: 1.5, borderColor: field === 'piece' ? t.accent : t.hairline }}
-        >
-          <T w={800} size={15} color={field === 'piece' ? t.accentPress : t.text}>
-            {pieceG != null ? `${trimNum(pieceG)} g` : 'set g'}
+      {!canUnits ? (
+        <Pressable onPress={() => pickAmount('servings')} hitSlop={6} style={{ marginBottom: 12 }}>
+          <T w={700} size={13} color={t.accentPress}>
+            Count by the piece instead (set a piece size) →
           </T>
         </Pressable>
+      ) : null}
+
+      {/* the number being typed + live calories */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+          <T num w={800} size={34}>
+            {(field === 'piece' ? pieceEntry : entry) || '0'}
+          </T>
+          <T w={800} size={15} color={t.text3}>
+            {field === 'piece' ? 'g per piece' : effMode === 'servings' ? unitWord : 'g'}
+          </T>
+        </View>
+        {field === 'piece' ? null : (
+          <T num w={800} size={26} color={t.accentPress}>
+            {kcal} kcal
+          </T>
+        )}
       </View>
+      {/* plain-language conversion line so grams ↔ pieces is never a mystery */}
+      <T w={700} size={13} color={t.text2} style={{ marginBottom: 12 }}>
+        {field === 'piece'
+          ? `Setting the size of one ${unitName.trim() || 'piece'} — remembered for next time`
+          : pieceG && count != null
+            ? `= ${trimNum(count)} ${unitWord} · ${trimNum(grams)} g`
+            : `= ${trimNum(grams)} g`}
+      </T>
+
+      {/* piece editor — name it ("sausage") + how many grams one weighs; remembered on the food */}
+      {showPieceEditor ? (
+        <>
+          <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
+            Size of one piece (remembered)
+          </T>
+          <View
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, marginBottom: 12, backgroundColor: field === 'piece' ? t.accentSoft : t.surface2, borderWidth: 1.5, borderColor: field === 'piece' ? t.accent : t.hairline }}
+          >
+            <T w={700} size={14} color={t.text2}>
+              1
+            </T>
+            <TextInput
+              value={unitName}
+              onChangeText={setUnitName}
+              placeholder="piece (e.g. sausage)"
+              placeholderTextColor={t.text3}
+              style={{ flex: 1, fontFamily: Font[800], fontSize: 15, color: t.text, paddingVertical: 6 }}
+            />
+            <T w={700} size={14} color={t.text2}>
+              =
+            </T>
+            <Pressable
+              onPress={() => {
+                setField('piece');
+                setFresh(true);
+              }}
+              hitSlop={8}
+              style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 9, backgroundColor: t.surface, borderWidth: 1.5, borderColor: field === 'piece' ? t.accent : t.hairline }}
+            >
+              <T w={800} size={15} color={field === 'piece' ? t.accentPress : t.text}>
+                {pieceG != null ? `${trimNum(pieceG)} g` : 'set g'}
+              </T>
+            </Pressable>
+          </View>
+        </>
+      ) : null}
 
       {/* quick amounts */}
       {field === 'amount' ? (
@@ -751,21 +793,11 @@ function AmountSheet({
           {quickChips.map((c) => (
             <Chip key={c} active={entry === c} onPress={() => setQuick(c)}>
               {effMode === 'servings' ? c : `${c} g`}
+              {lastQuick === c ? ' · last time' : ''}
             </Chip>
           ))}
         </View>
       ) : null}
-
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-        <T w={700} size={15} color={t.text2}>
-          {field === 'piece' ? `Grams in 1 ${unitName.trim() || 'piece'}` : effMode === 'servings' ? `Counting ${piecesLabel.toLowerCase()}` : 'Entering grams'}
-        </T>
-        {field === 'piece' ? null : (
-          <T num w={800} size={26} color={t.accentPress}>
-            {kcal} kcal
-          </T>
-        )}
-      </View>
 
       <View style={{ marginBottom: 14 }}>
         <NumberPad onKey={press} />
@@ -801,31 +833,13 @@ function AmountSheet({
   );
 }
 
-function StatTile({ label, value, unit, sub, active, onPress }: { label: string; value: string; unit?: string; sub?: string; active: boolean; onPress: () => void }) {
+function UnitSeg({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   const t = useTheme();
   return (
-    <Pressable
-      onPress={onPress}
-      style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, backgroundColor: active ? t.accentSoft : t.surface2, borderWidth: 2, borderColor: active ? t.accent : t.hairline }}
-    >
-      <T w={800} size={11} color={active ? t.accentPress : t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>
+    <Pressable onPress={onPress} style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 11, backgroundColor: on ? t.accent : 'transparent' }}>
+      <T w={800} size={15} color={on ? '#fff' : t.text2}>
         {label}
       </T>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
-        <T num w={800} size={26} color={active ? t.accentPress : t.text}>
-          {value}
-        </T>
-        {unit ? (
-          <T w={800} size={14} color={t.text3}>
-            {unit}
-          </T>
-        ) : null}
-      </View>
-      {sub ? (
-        <T w={700} size={12} color={t.text3} numberOfLines={1}>
-          {sub}
-        </T>
-      ) : null}
     </Pressable>
   );
 }

@@ -40,7 +40,15 @@ export function foodsRouter(db: DB): Router {
     const slot = (req.query.slot as string | undefined) ?? '';
     const date = (req.query.date as string | undefined) ?? '';
 
-    const foods = db.prepare('SELECT * FROM foods ORDER BY updated_at DESC LIMIT 200').all() as Record<string, any>[];
+    const all = db.prepare('SELECT * FROM foods ORDER BY updated_at DESC LIMIT 200').all() as Record<string, any>[];
+    // What's already in this meal today drops out, so the list re-ranks to "what comes next".
+    const loggedNow =
+      date && slot
+        ? new Set(
+            (db.prepare('SELECT DISTINCT food_id FROM food_log WHERE day_date = ? AND meal_slot = ? AND food_id IS NOT NULL').all(date, slot) as { food_id: number }[]).map((x) => x.food_id),
+          )
+        : new Set<number>();
+    const foods = all.filter((f) => !loggedNow.has(f.id));
     if (!foods.length) return res.json([]);
 
     // per-food logging stats
@@ -106,10 +114,10 @@ export function foodsRouter(db: DB): Router {
       const score = c.seq + c.hour + c.slot + c.recency + c.freq + c.fav;
       // pick the dominant signal for a short human reason
       const ranked = [
-        { v: c.seq, why: anchorName ? `after ${anchorName}` : undefined },
-        { v: c.hour, why: 'you usually have this now' },
+        { v: c.seq, why: anchorName ? `often after ${anchorName}` : undefined },
+        { v: c.hour, why: 'around this time' },
         { v: c.slot, why: slotLabel ? `often at ${slotLabel.toLowerCase()}` : undefined },
-        { v: c.recency, why: days <= 2 ? 'recent' : undefined },
+        { v: c.recency, why: days <= 2 ? 'had recently' : undefined },
         { v: c.fav, why: f.is_favorite ? 'favorite' : undefined },
       ].sort((a, b) => b.v - a.v);
       const reason = ranked[0].v > 0 ? ranked[0].why : undefined;

@@ -58,8 +58,11 @@ export function FoodDayScreen({ navigation }: Props) {
   const target = d ? (banking ? d.adjusted_goal : d.goal) : 0;
   const remaining = d ? (banking ? d.adjusted_remaining : d.remaining) : 0;
 
+  const itemCount = SLOTS.reduce((n, s) => n + (d?.slots?.[s.key] ?? []).length, 0);
+
   return (
-    <Screen>
+    <View style={{ flex: 1 }}>
+      <Screen padBottom={110}>
       {/* date selector */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, marginBottom: 16 }}>
         <RoundBtn icon="chevL" onPress={() => setDate((x) => addDaysStr(x, -1))} />
@@ -183,14 +186,11 @@ export function FoodDayScreen({ navigation }: Props) {
         );
       })}
 
-      <View style={{ marginTop: 6 }}>
-        <Button full size="lg" icon="plus" onPress={() => openAdd(slotForNow())}>
-          Add food
-        </Button>
-      </View>
-      <T w={600} size={12} color={t.text3} style={{ textAlign: 'center', marginTop: 12 }}>
-        Tip: tap a food to edit the amount, move it to another meal, or remove it.
-      </T>
+      {itemCount > 0 ? (
+        <T w={600} size={12} color={t.text3} style={{ textAlign: 'center', marginTop: 6 }}>
+          Tip: tap a food to edit the amount, move it to another meal, or remove it.
+        </T>
+      ) : null}
 
       <LogItemSheet
         item={editing}
@@ -201,7 +201,29 @@ export function FoodDayScreen({ navigation }: Props) {
         }}
         onRemove={(it) => removeItem(it)}
       />
-    </Screen>
+      </Screen>
+
+      {/* always-reachable add — no scrolling past the whole day to log something */}
+      <Pressable
+        onPress={() => openAdd(slotForNow())}
+        style={[
+          {
+            position: 'absolute',
+            right: 22,
+            bottom: 26,
+            width: 60,
+            height: 60,
+            borderRadius: 999,
+            backgroundColor: t.accent,
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+          t.shadowSm,
+        ]}
+      >
+        <Icon name="plus" size={28} stroke={2.8} color="#fff" />
+      </Pressable>
+    </View>
   );
 }
 
