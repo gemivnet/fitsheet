@@ -7,6 +7,7 @@ import type { DB } from '../db/index';
 export interface PersonalContext {
   topFoods: { name: string; n: number; usual_grams: number }[];
   mealTiming: { meal_slot: string; n: number }[];
+  slotUsuals: Record<string, string[]>;
 }
 
 function compute(db: DB): PersonalContext {
@@ -19,7 +20,16 @@ function compute(db: DB): PersonalContext {
   const mealTiming = db
     .prepare("SELECT meal_slot, COUNT(*) AS n FROM food_log WHERE day_date >= date('now','-30 days') GROUP BY meal_slot")
     .all() as { meal_slot: string; n: number }[];
-  return { topFoods, mealTiming };
+  // what she actually has per meal — sharpens parsing ("eggs" at 7am means HER eggs)
+  const rows = db
+    .prepare("SELECT meal_slot, name, COUNT(*) AS n FROM food_log WHERE day_date >= date('now','-60 days') GROUP BY meal_slot, LOWER(name) ORDER BY n DESC")
+    .all() as { meal_slot: string; name: string; n: number }[];
+  const slotUsuals: Record<string, string[]> = {};
+  for (const r of rows) {
+    (slotUsuals[r.meal_slot] ??= []);
+    if (slotUsuals[r.meal_slot].length < 5 && r.n >= 2) slotUsuals[r.meal_slot].push(r.name);
+  }
+  return { topFoods, mealTiming, slotUsuals };
 }
 
 // Cached: her habits don't change minute-to-minute, and AI calls shouldn't re-run these every time.
@@ -45,6 +55,15 @@ export function personalFoodsHint(db: DB): string {
     .slice(0, 20)
     .map((f) => `${f.name} (~${Math.round(f.usual_grams)}g)`)
     .join(', ');
+}
+
+// "breakfast usuals: grits, coffee; lunch usuals: …" — one line of per-meal habits.
+export function personalSlotHint(db: DB): string {
+  const { slotUsuals } = buildPersonalContext(db);
+  const parts = Object.entries(slotUsuals)
+    .filter(([, names]) => names.length)
+    .map(([slot, names]) => `${slot} usuals: ${names.join(', ')}`);
+  return parts.join('; ');
 }
 
 // What she usually gets at a specific restaurant — derived from her cached orders there (the

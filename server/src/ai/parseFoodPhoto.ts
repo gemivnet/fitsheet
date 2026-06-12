@@ -5,8 +5,9 @@ import { readFileSync } from 'node:fs';
 import { claudeText, extractJson, imageBlock } from './client';
 import type { ParsedFood } from './parseFood';
 
-export async function parseFoodPhoto(filePath: string, mediaType: string): Promise<ParsedFood[]> {
+export async function parseFoodPhoto(filePath: string, mediaType: string, personalFoods = ''): Promise<ParsedFood[]> {
   const base64 = readFileSync(filePath).toString('base64');
+  const hint = personalFoods ? `\nThis person commonly logs these foods (use the matching name and their usual portion when it fits): ${personalFoods}.` : '';
   const out = await claudeText({
     system:
       "You read a photo of someone's food notes or diary (handwritten or typed) and convert it into " +
@@ -17,7 +18,7 @@ export async function parseFoodPhoto(filePath: string, mediaType: string): Promi
       {
         type: 'text',
         text:
-          'List the foods in this photo. Reply ONLY a JSON array, no prose: ' +
+          `List the foods in this photo.${hint}\nReply ONLY a JSON array, no prose: ` +
           '[{"name": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number}]',
       },
     ],

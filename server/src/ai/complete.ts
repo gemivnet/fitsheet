@@ -3,10 +3,7 @@
 // That single rule drops anything that doesn't actually continue her text (prose, refusals, wrong
 // associations like "McDonalds" → "Big Mac") and preserves spacing. Fails to '' on anything odd.
 
-import { claudeText } from './client';
-
-// A fast, cheap model for keystroke-latency completions (falls back to the configured model).
-const FAST_MODEL = 'claude-haiku-4-5';
+import { claudeText, FAST_MODEL } from './client';
 
 const SYS =
   'You autocomplete a single food or restaurant item name a user is typing. Reply with ONLY the one ' +

@@ -7,6 +7,10 @@ import { config } from '../config';
 
 type Content = Anthropic.MessageParam['content'];
 
+// A fast, cheap model for short structured tasks (autocomplete, recaps, check-ins).
+// Vision, menu pulls, and meal planning stay on the configured (bigger) model.
+export const FAST_MODEL = 'claude-haiku-4-5';
+
 // One shared client: the SDK retries transient 429/5xx itself (maxRetries) and the timeout
 // bounds every call — a stuck connection can't hang a request forever.
 let _client: Anthropic | null = null;

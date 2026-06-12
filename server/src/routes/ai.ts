@@ -4,7 +4,7 @@ import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
 import { parseFoodPhoto } from '../ai/parseFoodPhoto';
 import { parseRecipe } from '../ai/parseRecipe';
-import { personalFoodsHint, restaurantHistory } from '../ai/personalContext';
+import { personalFoodsHint, personalSlotHint, restaurantHistory } from '../ai/personalContext';
 import { claudeStream } from '../ai/client';
 import { complete } from '../ai/complete';
 import { generateDayInsights } from '../ai/dayInsights';
@@ -22,11 +22,15 @@ function aiFail(res: { status: (n: number) => { json: (o: unknown) => unknown } 
   res.status(502).json({ error: `${what}_failed` });
 }
 
+function maxMilestoneId(db: DB): number {
+  return ((db.prepare('SELECT MAX(id) AS m FROM milestones').get() as { m: number | null }).m ?? 0) as number;
+}
+
 function cacheCheckin(db: DB, note: string): void {
   db.prepare(
     "INSERT INTO settings (key,value_json,updated_at) VALUES ('checkin',?,?) " +
       'ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at',
-  ).run(JSON.stringify({ note, generated_at: nowIso() }), nowIso());
+  ).run(JSON.stringify({ note, generated_at: nowIso(), max_milestone_id: maxMilestoneId(db) }), nowIso());
 }
 
 export function aiRouter(db: DB): Router {
@@ -63,7 +67,7 @@ export function aiRouter(db: DB): Router {
     const text = String(req.body?.text ?? '').trim();
     if (!text) return res.status(400).json({ error: 'text required' });
     try {
-      res.json({ items: await parseFood(text, personalFoodsHint(db)) });
+      res.json({ items: await parseFood(text, personalFoodsHint(db), personalSlotHint(db)) });
     } catch (e) {
       aiFail(res, 'parse', e);
     }
@@ -74,7 +78,7 @@ export function aiRouter(db: DB): Router {
     if (!req.file) return res.status(400).json({ error: 'file required' });
     if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
     try {
-      res.json({ items: await parseFoodPhoto(req.file.path, req.file.mimetype) });
+      res.json({ items: await parseFoodPhoto(req.file.path, req.file.mimetype, personalFoodsHint(db)) });
     } catch (e) {
       aiFail(res, 'parse', e);
     }
@@ -219,7 +223,7 @@ export function aiRouter(db: DB): Router {
   // ── weekly check-in (cached ~7 days in the settings table) ───────────────
   r.get('/checkin', async (_req, res) => {
     const row = db.prepare("SELECT value_json FROM settings WHERE key = 'checkin'").get() as { value_json: string } | undefined;
-    let cached: { note: string; generated_at: string } | null = null;
+    let cached: { note: string; generated_at: string; max_milestone_id?: number } | null = null;
     if (row) {
       try {
         cached = JSON.parse(row.value_json);
@@ -227,7 +231,8 @@ export function aiRouter(db: DB): Router {
         /* ignore */
       }
     }
-    const fresh = cached ? Date.now() - new Date(cached.generated_at).getTime() < 7 * 86_400_000 : false;
+    // fresh = within 7 days AND no new milestone since — a celebration deserves a new note
+    const fresh = cached ? Date.now() - new Date(cached.generated_at).getTime() < 7 * 86_400_000 && cached.max_milestone_id === maxMilestoneId(db) : false;
     if (cached && fresh) return res.json({ note: cached.note });
     if (!hasAnthropicKey()) return res.json({ note: cached?.note ?? null });
 
