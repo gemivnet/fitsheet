@@ -31,11 +31,19 @@ const norm = (s: string) => s.toLowerCase().trim();
 
 type Props = NativeStackScreenProps<FoodStackParams, 'DiningOut'>;
 
+// Thin route wrapper (for any direct navigation); the real content is DiningOutTab, which Add food
+// renders inline as a tab so the header persists.
 export function DiningOutScreen({ navigation, route }: Props) {
+  return (
+    <Screen>
+      <DiningOutTab slot={route.params.slot} date={route.params.date} goDay={() => navigation.goBack()} />
+    </Screen>
+  );
+}
+
+export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string; goDay: () => void }) {
   const t = useTheme();
   const qc = useQueryClient();
-  const { date } = route.params;
-  const [slot, setSlot] = useState(route.params.slot);
   const [restaurant, setRestaurant] = useState('');
   const [item, setItem] = useState('');
   const [orderName, setOrderName] = useState('');
@@ -209,7 +217,7 @@ export function DiningOutScreen({ navigation, route }: Props) {
     await api.foodLog.add({ date, meal_slot: slot, name: name(), grams: Math.round(totals.grams), eating_out: 1, ...macros100 });
     qc.invalidateQueries({ queryKey: ['foodlog', date] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
-    navigation.goBack();
+    goDay();
   };
   const saveOrder = async () => {
     if (!canLog) return;
@@ -244,30 +252,11 @@ export function DiningOutScreen({ navigation, route }: Props) {
     });
     qc.invalidateQueries({ queryKey: ['foodlog', date] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
-    navigation.goBack();
+    goDay();
   };
 
   return (
-    <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 14 }}>
-        <T w={800} size={26}>
-          Dining out 🍔
-        </T>
-        <Pressable onPress={() => navigation.goBack()}>
-          <T w={800} size={16} color={t.accentPress}>
-            Cancel
-          </T>
-        </Pressable>
-      </View>
-
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-        {MEALS.map((m) => (
-          <Chip key={m.key} active={slot === m.key} onPress={() => setSlot(m.key)}>
-            {m.label}
-          </Chip>
-        ))}
-      </View>
-
+    <View>
       <AutocompleteField
         label="Restaurant"
         value={restaurant}
@@ -494,7 +483,7 @@ export function DiningOutScreen({ navigation, route }: Props) {
       </T>
 
       <EditComponentSheet restaurant={rest} editing={editing} onClose={() => setEditing(null)} onRemoved={(id) => setSel((s) => { const n = { ...s }; delete n[id]; return n; })} />
-    </Screen>
+    </View>
   );
 }
 

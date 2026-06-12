@@ -109,8 +109,7 @@ export function HomeScreen() {
           </View>
         </View>
 
-        <CheckinCard />
-
+        {/* Once the day's recap is ready it's the exclusive top card; otherwise the check-in + usual meal show. */}
         {recap.data?.note ? (
           <Card pad={18} style={{ marginBottom: 16, backgroundColor: t.accentSofter }}>
             <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
@@ -125,9 +124,12 @@ export function HomeScreen() {
               </View>
             </View>
           </Card>
-        ) : null}
-
-        {usual.data?.found && (today.slots?.[usual.data.slot] ?? []).length === 0 ? <UsualMealCard meal={usual.data} /> : null}
+        ) : (
+          <>
+            <CheckinCard />
+            {usual.data?.found && (today.slots?.[usual.data.slot] ?? []).length === 0 ? <UsualMealCard meal={usual.data} /> : null}
+          </>
+        )}
 
         {/* today's calories */}
         <Card pad={24} style={{ marginBottom: 16 }}>

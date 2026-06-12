@@ -9,6 +9,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AutocompleteField, Button, Card, Chip, Icon, type IconName, NumberPad, Screen, SectionLabel, Sheet, T, TextField, useNumberField } from '../components';
 import { BarcodeScanner } from '../components/BarcodeScanner';
+import { DiningOutTab } from './DiningOutScreen';
+import { DishBuilderTab } from './DishBuilderScreen';
 import { api, type Food, type OffFood, type Suggestion } from '../lib/api';
 import { Font, useTheme } from '../theme';
 import type { FoodStackParams } from '../navigation/types';
@@ -171,7 +173,7 @@ export function AddFoodScreen({ navigation, route }: Props) {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }} contentContainerStyle={{ gap: 8, paddingRight: 8 }}>
           {MODES.map((m) => {
             const on = tab === m.key;
-            const act = () => (m.key === 'Dining' ? navigation.navigate('DiningOut', { slot, date }) : m.key === 'Dish' ? navigation.navigate('DishBuilder', { slot, date }) : setTab(m.key));
+            const act = () => setTab(m.key);
             return (
               <Pressable
                 key={m.key}
@@ -190,12 +192,16 @@ export function AddFoodScreen({ navigation, route }: Props) {
         {tab === 'Find' ? <FindTab slot={slot} date={date} onPick={setPicked} onQuickLog={quickLog} /> : null}
         {tab === 'Scan' ? <ScanTab onPick={setPicked} /> : null}
         {tab === 'Describe' ? <DescribeTab slot={slot} date={date} onDone={() => navigation.goBack()} /> : null}
+        {tab === 'Dining' ? <DiningOutTab slot={slot} date={date} goDay={() => navigation.goBack()} /> : null}
+        {tab === 'Dish' ? <DishBuilderTab slot={slot} date={date} goDay={() => navigation.goBack()} /> : null}
 
-        <View style={{ alignItems: 'center', paddingVertical: 16 }}>
-          <Button variant="ghost" icon="plus" onPress={() => navigation.navigate('LabelCapture', { slot, date })}>
-            Add a custom food (snap a label)
-          </Button>
-        </View>
+        {tab === 'Find' || tab === 'Scan' ? (
+          <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+            <Button variant="ghost" icon="plus" onPress={() => navigation.navigate('LabelCapture', { slot, date })}>
+              Add a custom food (snap a label)
+            </Button>
+          </View>
+        ) : null}
 
         <AmountSheet picked={picked} slot={slot} onClose={() => setPicked(null)} onAdd={(grams, food, mode, servingG, unitName, slotSel) => add.mutate({ grams, food, mode, servingG, unitName, slot: slotSel })} />
       </Screen>

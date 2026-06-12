@@ -33,10 +33,18 @@ const r1 = (n: number) => Math.round(n * 10) / 10;
 
 type Props = NativeStackScreenProps<FoodStackParams, 'DishBuilder'>;
 
+// Thin route wrapper; the content is DishBuilderTab, rendered inline as a tab by Add food.
 export function DishBuilderScreen({ navigation, route }: Props) {
+  return (
+    <Screen>
+      <DishBuilderTab slot={route.params.slot} date={route.params.date} goDay={() => navigation.goBack()} />
+    </Screen>
+  );
+}
+
+export function DishBuilderTab({ slot, date, goDay }: { slot: string; date: string; goDay: () => void }) {
   const t = useTheme();
   const qc = useQueryClient();
-  const { slot, date } = route.params;
   const nextId = useRef(1);
 
   const [name, setName] = useState('');
@@ -85,7 +93,7 @@ export function DishBuilderScreen({ navigation, route }: Props) {
     await api.foodLog.add({ date, meal_slot: slot, name: name.trim() || 'Dish', grams: ateGrams, kcal_100g: per100.kcal, protein_100g: per100.protein, carb_100g: per100.carb, fat_100g: per100.fat });
     qc.invalidateQueries({ queryKey: ['foodlog', date] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
-    navigation.goBack();
+    goDay();
   }
   async function saveDish() {
     if (cooked <= 0 || !ingredients.length) return;
@@ -96,17 +104,7 @@ export function DishBuilderScreen({ navigation, route }: Props) {
   }
 
   return (
-    <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 6 }}>
-        <T w={800} size={26}>
-          Build a dish
-        </T>
-        <Pressable onPress={() => navigation.goBack()}>
-          <T w={800} size={16} color={t.accentPress}>
-            Cancel
-          </T>
-        </Pressable>
-      </View>
+    <View>
       <T w={600} size={14} color={t.text2} style={{ marginBottom: 16, lineHeight: 20 }}>
         Add what went into the dish, enter the cooked weight, then how much you ate — we&rsquo;ll do the math.
       </T>
@@ -233,8 +231,8 @@ export function DishBuilderScreen({ navigation, route }: Props) {
       </T>
 
       <IngredientPicker visible={pickerOpen} onClose={() => setPickerOpen(false)} onAdd={addIngredient} />
-      <DishRelogSheet dish={relog} slot={slot} date={date} onClose={() => setRelog(null)} onLogged={() => { setRelog(null); navigation.goBack(); }} />
-    </Screen>
+      <DishRelogSheet dish={relog} slot={slot} date={date} onClose={() => setRelog(null)} onLogged={() => { setRelog(null); goDay(); }} />
+    </View>
   );
 }
 
