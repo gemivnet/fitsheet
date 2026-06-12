@@ -6,7 +6,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { applyNumberKey, Button, CalorieRing, Card, CelebrationModal, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, T } from '../components';
-import { api, type UsualMeal } from '../lib/api';
+import { api, type SupplementToday, type UsualMeal } from '../lib/api';
 import { slotForNow, todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
 import { useTheme } from '../theme';
@@ -252,6 +252,8 @@ export function HomeScreen() {
           </View>
         </Card>
 
+        <SupplementsCard />
+
         {/* weight goal + workout */}
         <View style={{ flexDirection: 'row', gap: 16 }}>
           <Card pad={20} style={{ flex: 1 }}>
@@ -343,6 +345,43 @@ export function HomeScreen() {
         />
       ) : null}
     </View>
+  );
+}
+
+function SupplementsCard() {
+  const t = useTheme();
+  const qc = useQueryClient();
+  const date = todayStr();
+  const q = useQuery({ queryKey: ['supplements-today', date], queryFn: () => api.supplements.today(date) });
+  const toggle = useMutation({
+    mutationFn: (p: { id: number; taken: boolean }) => api.supplements.toggle(p.id, date, p.taken),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['supplements-today', date] }),
+  });
+  const onToggle = (s: SupplementToday) => {
+    qc.setQueryData(['supplements-today', date], (xs?: SupplementToday[]) => (xs ?? []).map((x) => (x.id === s.id ? { ...x, taken: s.taken ? 0 : 1 } : x)));
+    toggle.mutate({ id: s.id, taken: !s.taken });
+  };
+  if (!q.data?.length) return null;
+  const done = q.data.filter((s) => s.taken).length;
+  return (
+    <Card pad={20} style={{ marginBottom: 16 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <SectionLabel>Vitamins &amp; meds</SectionLabel>
+        <T num w={800} size={13} color={done === q.data.length ? t.success : t.text3}>
+          {done}/{q.data.length} {done === q.data.length ? '✓' : ''}
+        </T>
+      </View>
+      {q.data.map((s, i) => (
+        <Pressable key={s.id} onPress={() => onToggle(s)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: i === q.data!.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
+          <View style={{ width: 24, height: 24, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.taken ? t.success : 'transparent', borderWidth: s.taken ? 0 : 1.8, borderColor: t.hairline }}>
+            {s.taken ? <Icon name="check" size={15} stroke={3} color="#fff" /> : null}
+          </View>
+          <T w={700} size={15} color={s.taken ? t.text3 : t.text} style={{ flex: 1, textDecorationLine: s.taken ? 'line-through' : 'none' }}>
+            {s.name}
+          </T>
+        </Pressable>
+      ))}
+    </Card>
   );
 }
 

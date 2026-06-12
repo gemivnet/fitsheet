@@ -3,12 +3,55 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, Switch, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, CalorieCalculator, Card, Icon, Screen, SectionLabel, SegmentedControl, T, TextField } from '../components';
 import { api, type Settings } from '../lib/api';
 import { confirmAction, notify } from '../lib/dialog';
 import { fromDisplayWeight, toDisplayWeight, type Units } from '../lib/units';
 import { useTheme } from '../theme';
+
+function SupplementsManager() {
+  const t = useTheme();
+  const qc = useQueryClient();
+  const list = useQuery({ queryKey: ['supplements'], queryFn: api.supplements.list });
+  const [name, setName] = useState('');
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['supplements'] });
+    qc.invalidateQueries({ queryKey: ['supplements-today'] });
+  };
+  const add = useMutation({ mutationFn: () => api.supplements.create(name.trim()), onSuccess: () => { setName(''); invalidate(); } });
+  const remove = useMutation({ mutationFn: (id: number) => api.supplements.remove(id), onSuccess: invalidate });
+  return (
+    <Card style={{ marginTop: 24 }}>
+      <SectionLabel style={{ marginBottom: 8 }}>Vitamins &amp; medications</SectionLabel>
+      <T w={600} size={13} color={t.text3} style={{ marginBottom: 12 }}>
+        These show on Home as a daily check.
+      </T>
+      {list.data?.map((s) => (
+        <View key={s.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: t.hairline }}>
+          <T w={700} size={15} style={{ flex: 1 }} numberOfLines={1}>
+            {s.name}
+          </T>
+          <Pressable onPress={() => remove.mutate(s.id)} hitSlop={8}>
+            <T w={800} size={14} color={t.caution}>
+              Remove
+            </T>
+          </Pressable>
+        </View>
+      ))}
+      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end', marginTop: 12 }}>
+        <View style={{ flex: 1 }}>
+          <TextField label={undefined} value={name} onChangeText={setName} placeholder="e.g. Vitamin D, Metformin" />
+        </View>
+        <View style={{ marginBottom: 14 }}>
+          <Button icon="plus" onPress={() => name.trim() && add.mutate()}>
+            Add
+          </Button>
+        </View>
+      </View>
+    </Card>
+  );
+}
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -150,6 +193,8 @@ export function SettingsScreen() {
       <Button full size="lg" icon="check" onPress={save}>
         Save settings
       </Button>
+
+      <SupplementsManager />
 
       <Card style={{ marginTop: 24 }}>
         <SectionLabel style={{ marginBottom: 12 }}>Data</SectionLabel>

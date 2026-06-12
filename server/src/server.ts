@@ -16,6 +16,7 @@ import { offRouter } from './routes/openfoodfacts';
 import { recipesRouter } from './routes/recipes';
 import { restaurantsRouter } from './routes/restaurants';
 import { settingsRouter } from './routes/settings';
+import { supplementsRouter } from './routes/supplements';
 import { walksRouter } from './routes/walks';
 import { weightRouter } from './routes/weight';
 import { weightPhotosRouter } from './routes/weightPhotos';
@@ -36,6 +37,7 @@ export function buildServer(db: DB) {
   app.use('/api/workouts', workoutsRouter(db));
   app.use('/api/walks', walksRouter(db));
   app.use('/api/notes', notesRouter(db));
+  app.use('/api/supplements', supplementsRouter(db));
   app.use('/api/recipes', recipesRouter(db));
   app.use('/api/restaurants', restaurantsRouter(db));
   app.use('/api/analytics', analyticsRouter(db));

@@ -231,6 +231,18 @@ export interface Analytics {
   };
 }
 
+export interface Supplement {
+  id: number;
+  name: string;
+  sort_order: number;
+  active: number;
+}
+export interface SupplementToday {
+  id: number;
+  name: string;
+  taken: number;
+}
+
 export interface UsualItem {
   food_id: number | null;
   name: string;
@@ -387,6 +399,15 @@ export const api = {
   },
 
   analytics: { summary: () => req<Analytics>('GET', '/api/analytics/summary') },
+
+  supplements: {
+    list: () => req<Supplement[]>('GET', '/api/supplements'),
+    today: (date: string) => req<SupplementToday[]>('GET', `/api/supplements/today?date=${date}`),
+    create: (name: string) => req<Supplement>('POST', '/api/supplements', { name }),
+    update: (id: number, p: { name?: string; active?: boolean }) => req<Supplement>('PATCH', `/api/supplements/${id}`, p),
+    remove: (id: number) => req('DELETE', `/api/supplements/${id}`),
+    toggle: (id: number, date: string, taken: boolean) => req('POST', `/api/supplements/${id}/toggle`, { date, taken }),
+  },
 
   restaurants: {
     components: (restaurant: string) => req<MenuComponent[]>('GET', `/api/restaurants/components?restaurant=${encodeURIComponent(restaurant)}`),
