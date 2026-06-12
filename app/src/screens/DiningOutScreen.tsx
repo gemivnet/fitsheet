@@ -4,7 +4,7 @@
 // out"). Saved orders re-log in one tap and also live in My foods.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { applyNumberKey, AutocompleteField, Button, Card, Chip, Icon, NumberField, NumberPad, Screen, SectionLabel, Sheet, T, TextField } from '../components';
@@ -209,7 +209,6 @@ export function DiningOutScreen({ navigation, route }: Props) {
         placeholder="e.g. Chipotle, McDonald's"
         autoFocus
         candidates={(restaurants.data ?? []).map((r) => r.restaurant)}
-        fetchCompletion={(txt) => api.ai.complete(txt, 'name of a fast food or restaurant chain').then((r) => r.completion)}
       />
       {restaurants.data && restaurants.data.length ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: -4, marginBottom: 14 }}>
@@ -301,13 +300,25 @@ export function DiningOutScreen({ navigation, route }: Props) {
             </View>
           </View>
 
-          {menu.data && menu.data.length === 0 && !menu.isLoading ? (
+          {fullMenu.isPending ? (
+            <Card pad={20} style={{ marginBottom: 10 }}>
+              <View style={{ alignItems: 'center', gap: 12 }}>
+                <ActivityIndicator color={t.accent} />
+                <T w={800} size={16}>
+                  Pulling {rest}&rsquo;s menu…
+                </T>
+                <T w={600} size={13} color={t.text3} style={{ textAlign: 'center', lineHeight: 19 }}>
+                  Reading the chain&rsquo;s published nutrition for every option — this can take 15–30s. It&rsquo;s saved after, so next time is instant.
+                </T>
+              </View>
+            </Card>
+          ) : menu.data && menu.data.length === 0 && !menu.isLoading ? (
             <Card pad={18} style={{ marginBottom: 10 }}>
               <T w={600} size={14} color={t.text2} style={{ marginBottom: 12, lineHeight: 20 }}>
                 No menu yet. Pull {rest}&rsquo;s full build-your-own menu (every protein, salsa, side…) — or just “Build an order” above.
               </T>
               <Button full icon="star" onPress={() => fullMenu.mutate()}>
-                {fullMenu.isPending ? 'Loading menu…' : `Load ${rest}'s full menu`}
+                Load {rest}&rsquo;s full menu
               </Button>
             </Card>
           ) : null}

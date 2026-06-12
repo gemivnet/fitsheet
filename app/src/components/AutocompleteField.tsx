@@ -65,10 +65,9 @@ export function AutocompleteField({
     let alive = true;
     const id = setTimeout(async () => {
       try {
-        const s = await fn(v);
-        const clean = (s || '').replace(/^\s+/, '');
-        cache.current.set(key, clean);
-        if (alive) setAiSuffix(clean);
+        const s = (await fn(v)) || ''; // keep leading space — it's the word boundary
+        cache.current.set(key, s);
+        if (alive) setAiSuffix(s);
       } catch {
         /* autocomplete fails silently */
       }
