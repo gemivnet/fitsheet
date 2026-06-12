@@ -6,10 +6,11 @@ import { Pressable, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, FoodRow, Icon, NumberPad, ProgressBar, RoundBtn, Screen, Sheet, T, useNumberField } from '../components';
+import { Button, Card, Chip, FoodRow, Icon, NumberPad, ProgressBar, RoundBtn, Screen, Sheet, showToast, T, useNumberField } from '../components';
 import { api, type LogEntry } from '../lib/api';
 import { confirmAction } from '../lib/dialog';
 import { addDaysStr, isToday, prettyDate, slotForNow, todayStr } from '../lib/date';
+import { DAY_UNDER_GOAL, pick } from '../lib/encouragement';
 import { useTheme } from '../theme';
 import type { FoodStackParams } from '../navigation/types';
 
@@ -44,11 +45,21 @@ export function FoodDayScreen({ navigation }: Props) {
     onSuccess: invalidate,
   });
   const snooze = useMutation({ mutationFn: (on: boolean) => api.foodLog.snooze(date, on), onSuccess: invalidate });
-  const mealComplete = useMutation({ mutationFn: (p: { slot: string; on: boolean }) => api.foodLog.mealComplete(date, p.slot, p.on), onSuccess: invalidate });
+  const mealComplete = useMutation({
+    mutationFn: (p: { slot: string; on: boolean }) => api.foodLog.mealComplete(date, p.slot, p.on),
+    onSuccess: (sum, p) => {
+      invalidate();
+      if (p.slot === 'dinner' && p.on && isToday(date)) {
+        qc.invalidateQueries({ queryKey: ['day-summary'] });
+        const left = sum.banking ? sum.adjusted_remaining : sum.remaining;
+        if (sum.totals.kcal > 0 && left >= 0) showToast(pick(DAY_UNDER_GOAL));
+      }
+    },
+  });
 
   const removeItem = (e: LogEntry) => {
     setEditing(null);
-    confirmAction('Remove food?', e.name, () => remove.mutate(e.id), { confirmText: 'Remove', destructive: true });
+    confirmAction('Remove food?', `${e.name} · ${Math.round(e.kcal)} kcal`, () => remove.mutate(e.id), { confirmText: 'Remove', destructive: true });
   };
 
   const openAdd = (slot: string) => navigation.navigate('AddFood', { slot, date });

@@ -12,6 +12,7 @@ import { BarcodeScanner } from '../components/BarcodeScanner';
 import { DiningOutTab } from './DiningOutScreen';
 import { DishBuilderTab } from './DishBuilderScreen';
 import { api, type Food, type OffFood, type Suggestion } from '../lib/api';
+import { FIRST_LOG_OF_DAY, pick } from '../lib/encouragement';
 import { Font, useTheme } from '../theme';
 import type { FoodStackParams } from '../navigation/types';
 
@@ -115,13 +116,14 @@ export function AddFoodScreen({ navigation, route }: Props) {
         carb_100g: p.food.carb_100g,
         fat_100g: p.food.fat_100g,
       });
-      return { id: res.added_id, name: p.food.name };
+      const dayCount = Object.values(res.slots ?? {}).reduce((n, xs) => n + xs.length, 0);
+      return { id: res.added_id, name: p.food.name, first: dayCount === 1 };
     },
-    onSuccess: ({ id, name }) => {
+    onSuccess: ({ id, name, first }) => {
       invalidate();
       setPicked(null);
       // stay open — the list re-ranks to what comes next
-      showToast(`${name} logged`, { actionLabel: 'Undo', onAction: () => undo.mutate(id) });
+      showToast(first ? `${name} logged — ${pick(FIRST_LOG_OF_DAY)}` : `${name} logged`, { actionLabel: 'Undo', onAction: () => undo.mutate(id) });
     },
   });
 

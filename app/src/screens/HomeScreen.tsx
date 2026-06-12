@@ -7,6 +7,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { applyNumberKey, Button, CalorieRing, Card, CelebrationModal, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, T } from '../components';
 import { api, type Suggestion, type SupplementToday, type UsualMeal } from '../lib/api';
+import { DAY_UNDER_GOAL, FIRST_LOG_OF_DAY, pick, WORKOUT_DONE } from '../lib/encouragement';
 import { slotForNow, todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
 import { useTheme } from '../theme';
@@ -41,7 +42,7 @@ export function HomeScreen() {
     mutationFn: (id: number) => api.workouts.complete(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['dashboard'] });
-      showToast('Nice work! 💪');
+      showToast(pick(WORKOUT_DONE));
     },
   });
 
@@ -57,10 +58,14 @@ export function HomeScreen() {
 
   const mealComplete = useMutation({
     mutationFn: (p: { slot: string; on: boolean }) => api.foodLog.mealComplete(todayStr(), p.slot, p.on),
-    onSuccess: (_d, p) => {
+    onSuccess: (sum, p) => {
       qc.invalidateQueries({ queryKey: ['dashboard'] });
-      // closing out dinner is the natural moment for a fresh recap
-      if (p.slot === 'dinner' && p.on) qc.invalidateQueries({ queryKey: ['day-summary'] });
+      // closing out dinner is the natural moment for a fresh recap — and a small cheer when it landed under goal
+      if (p.slot === 'dinner' && p.on) {
+        qc.invalidateQueries({ queryKey: ['day-summary'] });
+        const left = sum.banking ? sum.adjusted_remaining : sum.remaining;
+        if (sum.totals.kcal > 0 && left >= 0) showToast(pick(DAY_UNDER_GOAL));
+      }
     },
   });
 
@@ -126,7 +131,7 @@ export function HomeScreen() {
             {usual.data?.found && (today.slots?.[usual.data.slot] ?? []).length === 0 ? (
               <UsualMealCard meal={usual.data} />
             ) : (today.slots?.[curSlot] ?? []).length === 0 ? (
-              <QuickLogSuggestions slot={curSlot} />
+              <QuickLogSuggestions slot={curSlot} onAdd={() => addTo(curSlot)} firstOfDay={today.totals.kcal === 0} />
             ) : null}
           </>
         )}
@@ -333,14 +338,25 @@ export function HomeScreen() {
       </Screen>
 
       {d.milestone ? (
-        <CelebrationModal
-          visible
-          kpi={`−${d.milestone.threshold_lb}`}
-          title={`${d.milestone.threshold_lb} pounds down!`}
-          body={`Amazing work, ${s.display_name} — your trend just crossed another milestone. Keep showing up.`}
-          cta="Keep it up!"
-          onClose={() => ackMilestone.mutate(d.milestone!.id)}
-        />
+        d.milestone.kind === 'logging_streak' ? (
+          <CelebrationModal
+            visible
+            kpi={`${d.milestone.threshold_lb}🔥`}
+            title={`${d.milestone.threshold_lb} days in a row!`}
+            body={`${d.milestone.threshold_lb >= 30 ? 'A whole month' : 'A whole week'} of showing up, ${s.display_name} — that's how habits stick.`}
+            cta="Keep going!"
+            onClose={() => ackMilestone.mutate(d.milestone!.id)}
+          />
+        ) : (
+          <CelebrationModal
+            visible
+            kpi={`−${d.milestone.threshold_lb}`}
+            title={`${d.milestone.threshold_lb} pounds down!`}
+            body={`Amazing work, ${s.display_name} — your trend just crossed another milestone. Keep showing up.`}
+            cta="Keep it up!"
+            onClose={() => ackMilestone.mutate(d.milestone!.id)}
+          />
+        )
       ) : null}
     </View>
   );
@@ -405,8 +421,11 @@ function CheckinCard() {
   );
 }
 
+const SLOT_INVITE: Record<string, string> = { breakfast: 'What’s for breakfast?', lunch: 'What’s for lunch?', dinner: 'What’s for dinner?', snacks: 'Fancy a snack?' };
+
 // One-tap logging of the foods she most likely wants right now (remembered amounts).
-function QuickLogSuggestions({ slot }: { slot: string }) {
+// With nothing to suggest yet (brand-new library), it becomes a friendly invitation instead.
+function QuickLogSuggestions({ slot, onAdd, firstOfDay }: { slot: string; onAdd: () => void; firstOfDay: boolean }) {
   const t = useTheme();
   const qc = useQueryClient();
   const date = todayStr();
@@ -422,15 +441,31 @@ function QuickLogSuggestions({ slot }: { slot: string }) {
     mutationFn: async (f: Suggestion) => {
       const grams = f.last_grams ?? f.serving_g ?? 100;
       const res = await api.foodLog.add({ date, meal_slot: slot, food_id: f.id, name: f.name, grams, kcal_100g: f.kcal_100g, protein_100g: f.protein_100g, carb_100g: f.carb_100g, fat_100g: f.fat_100g });
-      return { id: res.added_id, name: f.name };
+      const dayCount = Object.values(res.slots ?? {}).reduce((n, xs) => n + xs.length, 0);
+      return { id: res.added_id, name: f.name, first: dayCount === 1 };
     },
-    onSuccess: ({ id, name }) => {
+    onSuccess: ({ id, name, first }) => {
       invalidate();
-      showToast(`${name} logged`, { actionLabel: 'Undo', onAction: () => undo.mutate(id) });
+      showToast(first ? `${name} logged — ${pick(FIRST_LOG_OF_DAY)}` : `${name} logged`, { actionLabel: 'Undo', onAction: () => undo.mutate(id) });
     },
   });
   const top = (sugg.data ?? []).slice(0, 3);
-  if (!top.length) return null;
+  if (!top.length) {
+    if (!firstOfDay || sugg.isLoading) return null;
+    return (
+      <Card pad={18} style={{ marginBottom: 16 }}>
+        <T w={800} size={16} style={{ marginBottom: 4 }}>
+          {SLOT_INVITE[slot] ?? 'What did you have?'}
+        </T>
+        <T w={600} size={13} color={t.text3} style={{ marginBottom: 12 }}>
+          Nothing logged yet — it only takes a couple of taps.
+        </T>
+        <Button full icon="plus" onPress={onAdd}>
+          Log {SLOT_NOUN[slot] ?? slot}
+        </Button>
+      </Card>
+    );
+  }
   return (
     <Card pad={18} style={{ marginBottom: 16 }}>
       <SectionLabel style={{ marginBottom: 2 }}>One tap to log · {SLOT_NOUN[slot] ?? slot}</SectionLabel>

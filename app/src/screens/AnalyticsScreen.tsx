@@ -34,8 +34,8 @@ export function AnalyticsScreen() {
       </View>
 
       {!d ? (
-        <T w={700} color={t.text3} style={{ padding: 8 }}>
-          {a.isLoading ? 'Crunching…' : 'No data yet.'}
+        <T w={700} color={t.text3} style={{ padding: 8, lineHeight: 21 }}>
+          {a.isLoading ? 'Crunching…' : 'Nothing to crunch yet — log meals for a few days and weigh in once, and this tab comes alive.'}
         </T>
       ) : (
         <>

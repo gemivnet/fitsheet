@@ -88,6 +88,19 @@ export function daySummary(db: DB, date: string) {
   };
 }
 
+// Celebrate showing up: when the logging streak ending on `date` crosses 7 or 30 days,
+// record a milestone (same table + dashboard → celebration pipeline as weight milestones).
+// INSERT OR IGNORE + the (kind, threshold) unique index = each fires once, never nags.
+function detectStreakMilestones(db: DB, date: string): void {
+  let streak = 0;
+  for (let i = 0; i < 400; i++) {
+    if (!db.prepare('SELECT 1 FROM food_log WHERE day_date = ? LIMIT 1').get(addDaysStr(date, -i))) break;
+    streak++;
+  }
+  const ins = db.prepare("INSERT OR IGNORE INTO milestones (kind, threshold_lb, achieved_date, acknowledged, created_at) VALUES ('logging_streak', ?, ?, 0, ?)");
+  for (const threshold of [7, 30]) if (streak >= threshold) ins.run(threshold, date, nowIso());
+}
+
 export function foodLogRouter(db: DB): Router {
   const r = Router();
 
@@ -194,6 +207,7 @@ export function foodLogRouter(db: DB): Router {
     }
     const addedId = Number(info.lastInsertRowid);
     invalidatePersonalContext(); // her habits just changed
+    detectStreakMilestones(db, date);
     writeAudit(db, { entity: 'food_log', entityId: addedId, action: 'create' });
     res.json({ ...daySummary(db, date), added_id: addedId });
   });
