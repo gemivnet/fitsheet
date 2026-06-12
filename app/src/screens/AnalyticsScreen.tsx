@@ -69,16 +69,30 @@ export function AnalyticsScreen() {
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
             <Metric
               label="Est. maintenance"
-              value={d.tdee.estimate != null ? `${d.tdee.estimate}` : '—'}
-              sub={d.tdee.reason ? `${d.tdee.logged_days_in_window}/14 days logged` : 'kcal / day'}
+              value={d.tdee.estimate != null ? `~${d.tdee.estimate}` : '—'}
+              sub={
+                d.tdee.estimate != null
+                  ? d.tdee.low != null && d.tdee.high != null
+                    ? `likely ${d.tdee.low}–${d.tdee.high} kcal/day`
+                    : 'kcal / day'
+                  : progressLine(d.progress)
+              }
             />
-            <Metric label="Rate" value={d.weight.lbs_per_week != null ? `${fmtWeight(Math.abs(d.weight.lbs_per_week), units)}` : '—'} sub={`${units}/week ${d.weight.label}`} />
+            <Metric
+              label="Rate"
+              value={d.weight.lbs_per_week != null ? `${fmtWeight(Math.abs(d.weight.lbs_per_week), units)}` : '—'}
+              sub={
+                d.weight.lbs_per_week != null
+                  ? `${units}/week ${d.weight.label}${d.weight.lbs_per_week_sigma ? ` · ±${fmtWeight(d.weight.lbs_per_week_sigma, units)}` : ''}`
+                  : 'log 3+ weigh-ins to see your pace'
+              }
+            />
           </View>
 
           {d.goal.eta_date ? (
             <Card pad={18} style={{ marginBottom: 12 }}>
               <SectionLabel style={{ marginBottom: 8 }}>On track for your goal</SectionLabel>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
                 <Icon name="trend" size={18} color={t.accent} />
                 <T w={800} size={20}>
                   ~{prettyDate(d.goal.eta_date)}
@@ -89,6 +103,9 @@ export function AnalyticsScreen() {
                   </T>
                 ) : null}
               </View>
+              <T w={600} size={12} color={t.text3} style={{ marginBottom: 10, lineHeight: 17 }}>
+                {etaRange(d.goal)} if your current pace holds{d.goal.eta_confidence === 'low' ? ' — still settling, check back in a week or two' : ''}.
+              </T>
               {d.goal.pct != null ? <ProgressBar value={d.goal.pct} max={100} height={10} /> : null}
             </Card>
           ) : null}
@@ -117,6 +134,21 @@ export function AnalyticsScreen() {
       )}
     </Screen>
   );
+}
+
+// "2 more weigh-ins and 3 more logged days to go" — what unlocks the maintenance estimate.
+function progressLine(p: { weighins_needed: number; logged_days_needed: number } | null): string {
+  if (!p) return 'kcal / day';
+  const parts: string[] = [];
+  if (p.weighins_needed > 0) parts.push(`${p.weighins_needed} more weigh-in${p.weighins_needed === 1 ? '' : 's'}`);
+  if (p.logged_days_needed > 0) parts.push(`${p.logged_days_needed} more logged day${p.logged_days_needed === 1 ? '' : 's'}`);
+  return parts.length ? `${parts.join(' and ')} to go` : 'almost there — keep logging';
+}
+
+function etaRange(g: { eta_weeks_low: number | null; eta_weeks_high: number | null }): string {
+  if (g.eta_weeks_low != null && g.eta_weeks_high != null) return `Likely ${Math.round(g.eta_weeks_low)}–${Math.round(g.eta_weeks_high)} weeks`;
+  if (g.eta_weeks_low != null) return `Could be as soon as ${Math.round(g.eta_weeks_low)} weeks`;
+  return 'A rough estimate';
 }
 
 function Metric({ label, value, sub }: { label: string; value: string; sub: string }) {

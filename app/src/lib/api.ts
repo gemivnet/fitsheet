@@ -135,6 +135,9 @@ export interface WeightGoal {
   remaining: number | null;
   pct: number | null;
   eta_weeks: number | null;
+  eta_weeks_low: number | null;
+  eta_weeks_high: number | null;
+  eta_confidence: 'low' | 'medium' | 'high' | null;
   eta_date: string | null;
   current_trend: number | null;
   current_raw: number | null;
@@ -222,10 +225,19 @@ export interface Dashboard {
 export interface Analytics {
   window_days: number;
   series: { date: string; raw: number; trend: number }[];
-  weight: { current_raw: number | null; current_trend: number | null; lbs_per_week: number | null; label: string };
-  tdee: { estimate: number | null; avg_intake: number | null; logged_days_in_window: number; reason: string | null };
+  weight: { current_raw: number | null; current_trend: number | null; lbs_per_week: number | null; lbs_per_week_sigma: number | null; label: string };
+  tdee: {
+    estimate: number | null;
+    low: number | null;
+    high: number | null;
+    avg_intake: number | null;
+    logged_days_in_window: number;
+    weighins_in_window: number;
+    reason: string | null;
+  };
   goal: WeightGoal;
-  projection: { date: string; weight: number }[];
+  projection: { date: string; weight: number; low: number; high: number }[];
+  progress: { weighins_needed: number; logged_days_needed: number } | null;
   adherence: {
     days_logged: number;
     avg_intake: number | null;
