@@ -20,6 +20,52 @@ export interface RestaurantItem {
   note?: string | null;
 }
 
+// Pull every COMPLETE {…} object out of a (possibly truncated) JSON array. Streamed menus can get
+// cut off at the token limit; this keeps all the items that fully arrived instead of failing.
+export function salvageObjects(text: string): any[] {
+  const start = text.indexOf('[');
+  const s = start >= 0 ? text.slice(start + 1) : text;
+  const out: any[] = [];
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  let buf = '';
+  for (const ch of s) {
+    if (inStr) {
+      buf += ch;
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      buf += ch;
+      continue;
+    }
+    if (ch === '{') {
+      depth++;
+      buf += ch;
+      continue;
+    }
+    if (ch === '}') {
+      depth--;
+      buf += ch;
+      if (depth === 0) {
+        try {
+          out.push(JSON.parse(buf));
+        } catch {
+          /* skip */
+        }
+        buf = '';
+      }
+      continue;
+    }
+    if (depth > 0) buf += ch;
+  }
+  return out;
+}
+
 export function cleanComponents(arr: any[]): RestaurantComponent[] {
   return arr
     .filter((c) => c && c.name && Number.isFinite(Number(c.kcal)))
@@ -53,9 +99,8 @@ export const fullMenuContent = (restaurant: string): string =>
   '[{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}]';
 
 export async function restaurantFullMenu(restaurant: string): Promise<RestaurantComponent[]> {
-  const out = await claudeText({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 3000 });
-  const arr = extractJson<any[]>(out);
-  return Array.isArray(arr) ? cleanComponents(arr) : [];
+  const out = await claudeText({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 4096 });
+  return cleanComponents(salvageObjects(out));
 }
 
 export async function restaurantItem(restaurant: string, item: string): Promise<RestaurantItem | null> {

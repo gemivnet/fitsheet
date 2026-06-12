@@ -3,9 +3,9 @@ import { generateCheckin, generateMealPlan } from '../ai/coach';
 import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
 import { parseRecipe } from '../ai/parseRecipe';
-import { claudeStream, extractJson } from '../ai/client';
+import { claudeStream } from '../ai/client';
 import { complete } from '../ai/complete';
-import { cleanComponents, FULL_MENU_SYSTEM, fullMenuContent, restaurantFullMenu, restaurantItem } from '../ai/restaurantItem';
+import { cleanComponents, FULL_MENU_SYSTEM, fullMenuContent, restaurantFullMenu, restaurantItem, salvageObjects } from '../ai/restaurantItem';
 import { hasAnthropicKey } from '../config';
 import type { DB } from '../db/index';
 import { upload } from '../upload';
@@ -146,9 +146,8 @@ export function aiRouter(db: DB): Router {
     res.flushHeaders?.();
     const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
     try {
-      const full = await claudeStream({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 3000, onText: (t) => send({ t }) });
-      const arr = extractJson<any[]>(full);
-      const comps = Array.isArray(arr) ? cleanComponents(arr) : [];
+      const full = await claudeStream({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 4096, onText: (t) => send({ t }) });
+      const comps = cleanComponents(salvageObjects(full));
       const ts = nowIso();
       const ins = db.prepare(
         'INSERT OR IGNORE INTO restaurant_components (restaurant,name,category,grams,kcal,protein_g,carb_g,fat_g,default_on,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
