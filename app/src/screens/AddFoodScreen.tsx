@@ -640,13 +640,15 @@ function AmountSheet({
     setField('amount');
     if (m !== mode) setEntry(m === 'servings' && pieceG ? trimNum(grams / pieceG) : trimNum(grams));
     setMode(m);
-    setFresh(false);
+    // Re-arm "fresh" so the value shown (just selected/converted) is replaced by the next keypress
+    // — tapping a tile and typing 2 should give 2, not append onto the old number.
+    setFresh(true);
   };
 
   const setQuick = (v: string) => {
     setEntry(v);
     setField('amount');
-    setFresh(false);
+    setFresh(true);
   };
   const quickChips =
     effMode === 'servings'
@@ -745,7 +747,7 @@ function AmountSheet({
           icon="check"
           onPress={() => {
             setField('amount');
-            setFresh(false);
+            setFresh(true);
           }}
         >
           Done

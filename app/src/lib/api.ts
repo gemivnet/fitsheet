@@ -387,6 +387,7 @@ export const api = {
     mealPlan: (days: number) => req<{ plan: MealPlan | null }>('POST', '/api/ai/meal-plan', { days }),
     restaurantItem: (restaurant: string, item: string) => req<{ item: RestaurantItem | null; cached?: boolean; error?: string }>('POST', '/api/ai/restaurant-item', { restaurant, item }),
     restaurantMenu: (restaurant: string) => req<({ id: number; query: string } & RestaurantItem)[]>('GET', `/api/ai/restaurant-menu?restaurant=${encodeURIComponent(restaurant)}`),
+    restaurantFullMenu: (restaurant: string) => req<{ components: RestaurantComponent[] }>('POST', '/api/ai/restaurant-menu-full', { restaurant }),
   },
 
   dev: {

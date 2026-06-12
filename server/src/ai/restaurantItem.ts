@@ -20,6 +20,44 @@ export interface RestaurantItem {
   note?: string | null;
 }
 
+function cleanComponents(arr: any[]): RestaurantComponent[] {
+  return arr
+    .filter((c) => c && c.name && Number.isFinite(Number(c.kcal)))
+    .map((c) => ({
+      name: String(c.name),
+      category: String(c.category || 'other').toLowerCase(),
+      grams: Math.max(0, Math.round(Number(c.grams) || 0)),
+      kcal: Math.max(0, Math.round(Number(c.kcal) || 0)),
+      protein_g: Math.max(0, Math.round(Number(c.protein_g) || 0)),
+      carb_g: Math.max(0, Math.round(Number(c.carb_g) || 0)),
+      fat_g: Math.max(0, Math.round(Number(c.fat_g) || 0)),
+      default_on: c.default_on !== false,
+    }));
+}
+
+// The COMPLETE build-your-own menu for a chain (every protein/base/topping/side), so the library
+// has all the options up front — not just the parts of orders she's built.
+export async function restaurantFullMenu(restaurant: string): Promise<RestaurantComponent[]> {
+  const out = await claudeText({
+    system:
+      'You list the COMPLETE build-your-own menu for a chain restaurant: every base, protein, bean, ' +
+      'salsa, topping, cheese, side, and sauce a customer can choose, using the chain\'s ACTUAL ' +
+      'published nutrition for one standard portion/scoop as served. Be thorough — include ALL the ' +
+      'standard options (e.g. for Chipotle: white & brown rice; chicken, steak, barbacoa, carnitas, ' +
+      'sofritas, veggie; black & pinto beans; all four salsas; cheese, sour cream, guacamole, lettuce, ' +
+      'fajita veggies; chips, hard/soft tacos, tortillas). Give each a category (base, protein, beans, ' +
+      'topping, salsa, cheese, side, sauce, other), portion grams, calories, protein/carb/fat grams, ' +
+      'and default_on (true ONLY for what a basic order typically includes). Use real published values.',
+    content:
+      `Restaurant: ${restaurant}\n\n` +
+      'Reply ONLY a JSON array, no prose: ' +
+      '[{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}]',
+    maxTokens: 3000,
+  });
+  const arr = extractJson<any[]>(out);
+  return Array.isArray(arr) ? cleanComponents(arr) : [];
+}
+
 export async function restaurantItem(restaurant: string, item: string): Promise<RestaurantItem | null> {
   const out = await claudeText({
     system:
@@ -42,18 +80,7 @@ export async function restaurantItem(restaurant: string, item: string): Promise<
   });
   const obj = extractJson<RestaurantItem>(out);
   if (!obj || !Array.isArray(obj.components)) return null;
-  obj.components = obj.components
-    .filter((c) => c && c.name && Number.isFinite(Number(c.kcal)))
-    .map((c) => ({
-      name: String(c.name),
-      category: String(c.category || 'other').toLowerCase(),
-      grams: Math.max(0, Math.round(Number(c.grams) || 0)),
-      kcal: Math.max(0, Math.round(Number(c.kcal) || 0)),
-      protein_g: Math.max(0, Math.round(Number(c.protein_g) || 0)),
-      carb_g: Math.max(0, Math.round(Number(c.carb_g) || 0)),
-      fat_g: Math.max(0, Math.round(Number(c.fat_g) || 0)),
-      default_on: c.default_on !== false,
-    }));
+  obj.components = cleanComponents(obj.components);
   if (!obj.components.length) return null;
   return obj;
 }

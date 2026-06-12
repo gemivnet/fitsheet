@@ -86,6 +86,15 @@ export function DiningOutScreen({ navigation, route }: Props) {
     setPending(comps.map((c) => ({ name: c.name, on: c.default_on })));
   };
 
+  const fullMenu = useMutation({
+    mutationFn: () => api.ai.restaurantFullMenu(rest),
+    onSuccess: () => {
+      setError(null);
+      qc.invalidateQueries({ queryKey: ['restaurant-components', rest] });
+    },
+    onError: (e: any) => setError(e?.status === 503 ? 'AI is off — add ANTHROPIC_API_KEY on the server.' : 'Couldn’t load the menu.'),
+  });
+
   const groups = useMemo(() => {
     const list = (menu.data ?? []).slice().sort((a, b) => catRank(a.category) - catRank(b.category) || a.sort_order - b.sort_order || a.name.localeCompare(b.name));
     const out: { cat: string; items: MenuComponent[] }[] = [];
@@ -263,17 +272,29 @@ export function DiningOutScreen({ navigation, route }: Props) {
           {/* the editable component menu */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 10 }}>
             <SectionLabel>Menu</SectionLabel>
-            <Pressable onPress={() => setEditMode((v) => !v)} hitSlop={8}>
-              <T w={800} size={13} color={t.accentPress}>
-                {editMode ? 'Done editing' : 'Edit menu'}
-              </T>
-            </Pressable>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+              <Pressable onPress={() => fullMenu.mutate()} hitSlop={8} disabled={fullMenu.isPending}>
+                <T w={800} size={13} color={t.accentPress}>
+                  {fullMenu.isPending ? 'Loading…' : 'Load full menu'}
+                </T>
+              </Pressable>
+              <Pressable onPress={() => setEditMode((v) => !v)} hitSlop={8}>
+                <T w={800} size={13} color={t.accentPress}>
+                  {editMode ? 'Done editing' : 'Edit menu'}
+                </T>
+              </Pressable>
+            </View>
           </View>
 
           {menu.data && menu.data.length === 0 && !menu.isLoading ? (
-            <T w={600} size={14} color={t.text3} style={{ padding: 8 }}>
-              No menu yet — “Build an order” above and the AI fills this in, or add items by hand.
-            </T>
+            <Card pad={18} style={{ marginBottom: 10 }}>
+              <T w={600} size={14} color={t.text2} style={{ marginBottom: 12, lineHeight: 20 }}>
+                No menu yet. Pull {rest}&rsquo;s full build-your-own menu (every protein, salsa, side…) — or just “Build an order” above.
+              </T>
+              <Button full icon="star" onPress={() => fullMenu.mutate()}>
+                {fullMenu.isPending ? 'Loading menu…' : `Load ${rest}'s full menu`}
+              </Button>
+            </Card>
           ) : null}
 
           {groups.map((g) => (
@@ -448,7 +469,7 @@ function EditComponentSheet({
         protein_g: Number(vals.protein) || 0,
         carb_g: Number(vals.carb) || 0,
         fat_g: Number(vals.fat) || 0,
-        default_on: existing ? !!existing.default_on : true,
+        default_on: existing ? existing.default_on : 1,
       };
       return existing ? api.restaurants.updateComponent(existing.id, payload) : api.restaurants.saveComponent(payload);
     },

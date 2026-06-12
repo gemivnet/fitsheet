@@ -3,7 +3,7 @@ import { generateCheckin, generateMealPlan } from '../ai/coach';
 import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
 import { parseRecipe } from '../ai/parseRecipe';
-import { restaurantItem } from '../ai/restaurantItem';
+import { restaurantFullMenu, restaurantItem } from '../ai/restaurantItem';
 import { hasAnthropicKey } from '../config';
 import type { DB } from '../db/index';
 import { upload } from '../upload';
@@ -100,6 +100,25 @@ export function aiRouter(db: DB): Router {
       components_json: string;
     }[];
     res.json(rows.map((row) => ({ id: row.id, name: row.name, query: row.query, components: JSON.parse(row.components_json) })));
+  });
+
+  // pull a restaurant's FULL build-your-own menu (all proteins, salsas, sides…) into the library
+  r.post('/restaurant-menu-full', async (req, res) => {
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    const restaurant = String(req.body?.restaurant ?? '').trim();
+    if (!restaurant) return res.status(400).json({ error: 'restaurant required' });
+    try {
+      const comps = await restaurantFullMenu(restaurant);
+      const ts = nowIso();
+      const ins = db.prepare(
+        'INSERT OR IGNORE INTO restaurant_components (restaurant,name,category,grams,kcal,protein_g,carb_g,fat_g,default_on,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      );
+      let order = 0;
+      for (const c of comps) ins.run(restaurant, c.name, c.category, c.grams, c.kcal, c.protein_g, c.carb_g, c.fat_g, c.default_on ? 1 : 0, order++, ts, ts);
+      res.json({ components: comps });
+    } catch (e) {
+      res.status(502).json({ error: 'failed', detail: String(e) });
+    }
   });
 
   // ── weekly check-in (cached ~7 days in the settings table) ───────────────
