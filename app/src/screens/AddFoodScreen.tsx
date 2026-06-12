@@ -6,7 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, Icon, NumberPad, Screen, SectionLabel, SegmentedControl, Sheet, T, TextField, useNumberField } from '../components';
+import { AutocompleteField, Button, Card, Chip, Icon, NumberPad, Screen, SectionLabel, SegmentedControl, Sheet, T, TextField, useNumberField } from '../components';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { api, type Food, type OffFood, type Suggestion } from '../lib/api';
 import { Font, useTheme } from '../theme';
@@ -331,10 +331,19 @@ function FindTab({ slot, date, onPick, onQuickLog }: { slot: string; date: strin
       .slice(0, 8)
       .map((x) => x.f);
   }, [q, mine.data, searching]);
+  const candidates = useMemo(() => (mine.data ?? []).map((f) => f.name), [mine.data]);
 
   return (
     <View>
-      <TextField label="Find food" value={text} onChangeText={setText} placeholder="Search your foods + online" autoFocus />
+      <AutocompleteField
+        label="Find food"
+        value={text}
+        onChangeText={setText}
+        placeholder="Search your foods + online"
+        autoFocus
+        candidates={candidates}
+        fetchCompletion={(txt) => api.ai.complete(txt, 'food item being searched in a calorie tracker').then((r) => r.completion)}
+      />
 
       {!searching ? (
         suggestions.data && suggestions.data.length ? (

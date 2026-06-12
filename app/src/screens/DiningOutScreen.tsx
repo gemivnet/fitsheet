@@ -7,7 +7,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { applyNumberKey, Button, Card, Chip, Icon, NumberField, NumberPad, Screen, SectionLabel, Sheet, T, TextField } from '../components';
+import { applyNumberKey, AutocompleteField, Button, Card, Chip, Icon, NumberField, NumberPad, Screen, SectionLabel, Sheet, T, TextField } from '../components';
 import { api, type Food, type MenuComponent, type RestaurantComponent } from '../lib/api';
 import { notify } from '../lib/dialog';
 import { useTheme } from '../theme';
@@ -202,7 +202,15 @@ export function DiningOutScreen({ navigation, route }: Props) {
         ))}
       </View>
 
-      <TextField label="Restaurant" value={restaurant} onChangeText={setRestaurant} placeholder="e.g. Chipotle, McDonald's" autoFocus />
+      <AutocompleteField
+        label="Restaurant"
+        value={restaurant}
+        onChangeText={setRestaurant}
+        placeholder="e.g. Chipotle, McDonald's"
+        autoFocus
+        candidates={(restaurants.data ?? []).map((r) => r.restaurant)}
+        fetchCompletion={(txt) => api.ai.complete(txt, 'name of a fast food or restaurant chain').then((r) => r.completion)}
+      />
       {restaurants.data && restaurants.data.length ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: -4, marginBottom: 14 }}>
           {restaurants.data.map((r) => (
@@ -246,7 +254,14 @@ export function DiningOutScreen({ navigation, route }: Props) {
           <SectionLabel style={{ marginBottom: 10 }}>Build an order</SectionLabel>
           <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end', marginBottom: 4 }}>
             <View style={{ flex: 1 }}>
-              <TextField label={undefined} value={item} onChangeText={setItem} placeholder="What are you getting? e.g. chicken bowl" />
+              <AutocompleteField
+                value={item}
+                onChangeText={setItem}
+                placeholder="What are you getting? e.g. chicken bowl"
+                candidates={[...(menu.data ?? []).map((c) => c.name), ...(cached.data ?? []).map((c) => c.name)]}
+                fetchCompletion={(txt) => api.ai.complete(txt, `a menu item or order at ${rest}`).then((r) => r.completion)}
+                onSubmit={() => build.mutate()}
+              />
             </View>
             <View style={{ marginBottom: 14 }}>
               <Button icon="star" onPress={() => build.mutate()}>

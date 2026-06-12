@@ -3,6 +3,7 @@ import { generateCheckin, generateMealPlan } from '../ai/coach';
 import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
 import { parseRecipe } from '../ai/parseRecipe';
+import { complete } from '../ai/complete';
 import { restaurantFullMenu, restaurantItem } from '../ai/restaurantItem';
 import { hasAnthropicKey } from '../config';
 import type { DB } from '../db/index';
@@ -30,6 +31,18 @@ export function aiRouter(db: DB): Router {
       res.json({ nutrition, label_photo: req.file.filename, confidence: nutrition?.confidence ?? 'low' });
     } catch (e) {
       res.status(502).json({ error: 'extract_failed', label_photo: req.file.filename, nutrition: null, detail: String(e) });
+    }
+  });
+
+  // ── inline autocomplete (ghost text); always 200, empty when off/unsure ──
+  r.post('/complete', async (req, res) => {
+    const text = String(req.body?.text ?? '');
+    const context = String(req.body?.context ?? '');
+    if (!hasAnthropicKey() || text.trim().length < 2) return res.json({ completion: '' });
+    try {
+      res.json({ completion: await complete(text, context) });
+    } catch {
+      res.json({ completion: '' });
     }
   });
 

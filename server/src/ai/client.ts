@@ -7,10 +7,10 @@ import { config } from '../config';
 
 type Content = Anthropic.MessageParam['content'];
 
-export async function claudeText(opts: { system?: string; content: Content; maxTokens?: number }): Promise<string> {
+export async function claudeText(opts: { system?: string; content: Content; maxTokens?: number; model?: string }): Promise<string> {
   const client = new Anthropic({ apiKey: config.anthropicApiKey });
   const res = await client.messages.create({
-    model: config.anthropicModel,
+    model: opts.model ?? config.anthropicModel,
     max_tokens: opts.maxTokens ?? 1024,
     system: opts.system,
     messages: [{ role: 'user', content: opts.content }],
