@@ -21,6 +21,23 @@ export async function claudeText(opts: { system?: string; content: Content; maxT
     .join('');
 }
 
+/** Like claudeText, but streams text deltas to onText as they arrive; resolves with the full text. */
+export async function claudeStream(opts: { system?: string; content: Content; maxTokens?: number; model?: string; onText: (delta: string) => void }): Promise<string> {
+  const client = new Anthropic({ apiKey: config.anthropicApiKey });
+  const stream = client.messages.stream({
+    model: opts.model ?? config.anthropicModel,
+    max_tokens: opts.maxTokens ?? 1024,
+    system: opts.system,
+    messages: [{ role: 'user', content: opts.content }],
+  });
+  stream.on('text', (delta: string) => opts.onText(delta));
+  const final = await stream.finalMessage();
+  return final.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+}
+
 /** Pull the first JSON object/array out of a model reply and parse it. */
 export function extractJson<T = any>(text: string): T | null {
   const m = /\{[\s\S]*\}|\[[\s\S]*\]/.exec(text);

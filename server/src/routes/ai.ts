@@ -3,8 +3,9 @@ import { generateCheckin, generateMealPlan } from '../ai/coach';
 import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
 import { parseRecipe } from '../ai/parseRecipe';
+import { claudeStream, extractJson } from '../ai/client';
 import { complete } from '../ai/complete';
-import { restaurantFullMenu, restaurantItem } from '../ai/restaurantItem';
+import { cleanComponents, FULL_MENU_SYSTEM, fullMenuContent, restaurantFullMenu, restaurantItem } from '../ai/restaurantItem';
 import { hasAnthropicKey } from '../config';
 import type { DB } from '../db/index';
 import { upload } from '../upload';
@@ -131,6 +132,34 @@ export function aiRouter(db: DB): Router {
       res.json({ components: comps });
     } catch (e) {
       res.status(502).json({ error: 'failed', detail: String(e) });
+    }
+  });
+
+  // same as above but STREAMS the model output (SSE) so the app can show options popping in live
+  r.post('/restaurant-menu-full-stream', async (req, res) => {
+    const restaurant = String(req.body?.restaurant ?? '').trim();
+    if (!restaurant) return res.status(400).json({ error: 'restaurant required' });
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+    const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
+    try {
+      const full = await claudeStream({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 3000, onText: (t) => send({ t }) });
+      const arr = extractJson<any[]>(full);
+      const comps = Array.isArray(arr) ? cleanComponents(arr) : [];
+      const ts = nowIso();
+      const ins = db.prepare(
+        'INSERT OR IGNORE INTO restaurant_components (restaurant,name,category,grams,kcal,protein_g,carb_g,fat_g,default_on,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      );
+      let order = 0;
+      for (const c of comps) ins.run(restaurant, c.name, c.category, c.grams, c.kcal, c.protein_g, c.carb_g, c.fat_g, c.default_on ? 1 : 0, order++, ts, ts);
+      send({ done: true, count: comps.length });
+    } catch (e) {
+      send({ error: String(e) });
+    } finally {
+      res.end();
     }
   });
 

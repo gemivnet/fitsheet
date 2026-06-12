@@ -8,7 +8,7 @@ import { ActivityIndicator, Pressable, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { applyNumberKey, AutocompleteField, Button, Card, Chip, Icon, NumberField, NumberPad, Screen, SectionLabel, Sheet, T, TextField } from '../components';
-import { api, type Food, type MenuComponent, type RestaurantComponent } from '../lib/api';
+import { api, apiBase, type Food, type MenuComponent, type RestaurantComponent } from '../lib/api';
 import { notify } from '../lib/dialog';
 import { useTheme } from '../theme';
 import type { FoodStackParams } from '../navigation/types';
@@ -86,14 +86,80 @@ export function DiningOutScreen({ navigation, route }: Props) {
     setPending(comps.map((c) => ({ name: c.name, on: c.default_on })));
   };
 
-  const fullMenu = useMutation({
-    mutationFn: () => api.ai.restaurantFullMenu(rest),
-    onSuccess: () => {
-      setError(null);
+  const [menuLoading, setMenuLoading] = useState(false);
+  const [streamNames, setStreamNames] = useState<string[]>([]);
+
+  // Stream the full menu so options pop in live (real data > a vague spinner). Falls back to the
+  // non-streaming endpoint if the browser can't read a streamed response.
+  const loadFullMenu = async () => {
+    if (menuLoading || !rest) return;
+    setMenuLoading(true);
+    setStreamNames([]);
+    setError(null);
+    const finish = () => {
       qc.invalidateQueries({ queryKey: ['restaurant-components', rest] });
-    },
-    onError: (e: any) => setError(e?.status === 503 ? 'AI is off — add ANTHROPIC_API_KEY on the server.' : 'Couldn’t load the menu.'),
-  });
+      setMenuLoading(false);
+    };
+    try {
+      const res = await fetch(`${apiBase}/api/ai/restaurant-menu-full-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restaurant: rest }),
+      });
+      if (res.status === 503) {
+        setError('AI is off — add ANTHROPIC_API_KEY on the server.');
+        setMenuLoading(false);
+        return;
+      }
+      const reader = (res as any).body?.getReader?.();
+      if (!reader) {
+        await api.ai.restaurantFullMenu(rest);
+        finish();
+        return;
+      }
+      const dec = new TextDecoder();
+      let buf = '';
+      let text = '';
+      const seen = new Set<string>();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n\n');
+        buf = parts.pop() ?? '';
+        for (const part of parts) {
+          const line = part.replace(/^data:\s*/, '').trim();
+          if (!line) continue;
+          let msg: any;
+          try {
+            msg = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (typeof msg.t === 'string') {
+            text += msg.t;
+            for (const m of text.matchAll(/"name"\s*:\s*"([^"]+)"/g)) {
+              const n = m[1];
+              if (!seen.has(n)) {
+                seen.add(n);
+                setStreamNames((a) => [...a, n]);
+              }
+            }
+          }
+          if (msg.error) setError('Couldn’t load the whole menu.');
+        }
+      }
+      finish();
+    } catch {
+      try {
+        await api.ai.restaurantFullMenu(rest);
+        finish();
+      } catch {
+        setError('Couldn’t load the menu.');
+        setMenuLoading(false);
+      }
+    }
+  };
 
   const groups = useMemo(() => {
     const list = (menu.data ?? []).slice().sort((a, b) => catRank(a.category) - catRank(b.category) || a.sort_order - b.sort_order || a.name.localeCompare(b.name));
@@ -287,9 +353,9 @@ export function DiningOutScreen({ navigation, route }: Props) {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 10 }}>
             <SectionLabel>Menu</SectionLabel>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-              <Pressable onPress={() => fullMenu.mutate()} hitSlop={8} disabled={fullMenu.isPending}>
+              <Pressable onPress={loadFullMenu} hitSlop={8} disabled={menuLoading}>
                 <T w={800} size={13} color={t.accentPress}>
-                  {fullMenu.isPending ? 'Loading…' : 'Load full menu'}
+                  {menuLoading ? 'Loading…' : 'Load full menu'}
                 </T>
               </Pressable>
               <Pressable onPress={() => setEditMode((v) => !v)} hitSlop={8}>
@@ -300,24 +366,36 @@ export function DiningOutScreen({ navigation, route }: Props) {
             </View>
           </View>
 
-          {fullMenu.isPending ? (
-            <Card pad={20} style={{ marginBottom: 10 }}>
-              <View style={{ alignItems: 'center', gap: 12 }}>
+          {menuLoading ? (
+            <Card pad={18} style={{ marginBottom: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: streamNames.length ? 12 : 0 }}>
                 <ActivityIndicator color={t.accent} />
-                <T w={800} size={16}>
-                  Pulling {rest}&rsquo;s menu…
-                </T>
-                <T w={600} size={13} color={t.text3} style={{ textAlign: 'center', lineHeight: 19 }}>
-                  Reading the chain&rsquo;s published nutrition for every option — this can take 15–30s. It&rsquo;s saved after, so next time is instant.
+                <T w={800} size={15}>
+                  Reading {rest}&rsquo;s menu{streamNames.length ? ` · ${streamNames.length} found` : '…'}
                 </T>
               </View>
+              {streamNames.length ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {streamNames.map((n, i) => (
+                    <View key={i} style={{ paddingVertical: 4, paddingHorizontal: 9, borderRadius: 999, backgroundColor: t.accentSoft }}>
+                      <T w={700} size={12} color={t.accentPress}>
+                        {n}
+                      </T>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <T w={600} size={13} color={t.text3} style={{ lineHeight: 19 }}>
+                  Pulling the chain&rsquo;s published nutrition for every option — saved after, so next time is instant.
+                </T>
+              )}
             </Card>
           ) : menu.data && menu.data.length === 0 && !menu.isLoading ? (
             <Card pad={18} style={{ marginBottom: 10 }}>
               <T w={600} size={14} color={t.text2} style={{ marginBottom: 12, lineHeight: 20 }}>
                 No menu yet. Pull {rest}&rsquo;s full build-your-own menu (every protein, salsa, side…) — or just “Build an order” above.
               </T>
-              <Button full icon="star" onPress={() => fullMenu.mutate()}>
+              <Button full icon="star" onPress={loadFullMenu}>
                 Load {rest}&rsquo;s full menu
               </Button>
             </Card>

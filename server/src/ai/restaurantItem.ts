@@ -20,7 +20,7 @@ export interface RestaurantItem {
   note?: string | null;
 }
 
-function cleanComponents(arr: any[]): RestaurantComponent[] {
+export function cleanComponents(arr: any[]): RestaurantComponent[] {
   return arr
     .filter((c) => c && c.name && Number.isFinite(Number(c.kcal)))
     .map((c) => ({
@@ -36,24 +36,24 @@ function cleanComponents(arr: any[]): RestaurantComponent[] {
 }
 
 // The COMPLETE build-your-own menu for a chain (every protein/base/topping/side), so the library
-// has all the options up front — not just the parts of orders she's built.
+// has all the options up front — not just the parts of orders she's built. Prompt is shared with
+// the streaming route.
+export const FULL_MENU_SYSTEM =
+  'You list the COMPLETE build-your-own menu for a chain restaurant: every base, protein, bean, ' +
+  "salsa, topping, cheese, side, and sauce a customer can choose, using the chain's ACTUAL " +
+  'published nutrition for one standard portion/scoop as served. Be thorough — include ALL the ' +
+  'standard options (e.g. for Chipotle: white & brown rice; chicken, steak, barbacoa, carnitas, ' +
+  'sofritas, veggie; black & pinto beans; all four salsas; cheese, sour cream, guacamole, lettuce, ' +
+  'fajita veggies; chips, hard/soft tacos, tortillas). Give each a category (base, protein, beans, ' +
+  'topping, salsa, cheese, side, sauce, other), portion grams, calories, protein/carb/fat grams, ' +
+  'and default_on (true ONLY for what a basic order typically includes). Use real published values.';
+export const fullMenuContent = (restaurant: string): string =>
+  `Restaurant: ${restaurant}\n\n` +
+  'Reply ONLY a JSON array, no prose: ' +
+  '[{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}]';
+
 export async function restaurantFullMenu(restaurant: string): Promise<RestaurantComponent[]> {
-  const out = await claudeText({
-    system:
-      'You list the COMPLETE build-your-own menu for a chain restaurant: every base, protein, bean, ' +
-      'salsa, topping, cheese, side, and sauce a customer can choose, using the chain\'s ACTUAL ' +
-      'published nutrition for one standard portion/scoop as served. Be thorough — include ALL the ' +
-      'standard options (e.g. for Chipotle: white & brown rice; chicken, steak, barbacoa, carnitas, ' +
-      'sofritas, veggie; black & pinto beans; all four salsas; cheese, sour cream, guacamole, lettuce, ' +
-      'fajita veggies; chips, hard/soft tacos, tortillas). Give each a category (base, protein, beans, ' +
-      'topping, salsa, cheese, side, sauce, other), portion grams, calories, protein/carb/fat grams, ' +
-      'and default_on (true ONLY for what a basic order typically includes). Use real published values.',
-    content:
-      `Restaurant: ${restaurant}\n\n` +
-      'Reply ONLY a JSON array, no prose: ' +
-      '[{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}]',
-    maxTokens: 3000,
-  });
+  const out = await claudeText({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 3000 });
   const arr = extractJson<any[]>(out);
   return Array.isArray(arr) ? cleanComponents(arr) : [];
 }
