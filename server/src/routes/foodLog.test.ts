@@ -121,6 +121,34 @@ test('usual meal splits weekday vs weekend and uses the latest variant', async (
   assert.equal(oats.kcal_100g, 300); // the LATEST variant, not the average
 });
 
+test('a described food joins the library and later logs link to it', async () => {
+  const before = (db.prepare('SELECT COUNT(*) AS n FROM foods').get() as { n: number }).n;
+  const r1 = await post('/api/food-log', { date: '2026-05-01', meal_slot: 'lunch', name: 'Lentil Soup', grams: 300, kcal_100g: 60, protein_100g: 4, carb_100g: 8, fat_100g: 1 });
+  const sum1 = await r1.json();
+  const created = db.prepare("SELECT * FROM foods WHERE source = 'described' AND name = 'Lentil Soup'").get() as { id: number; kcal_100g: number } | undefined;
+  assert.ok(created, 'described food created');
+  assert.equal(created.kcal_100g, 60);
+  const logged = db.prepare('SELECT food_id FROM food_log WHERE id = ?').get(sum1.added_id) as { food_id: number };
+  assert.equal(logged.food_id, created.id, 'log row links to the new food');
+
+  // a different casing matches the same food — no duplicate, last_grams bumped
+  const r2 = await post('/api/food-log', { date: '2026-05-02', meal_slot: 'lunch', name: 'LENTIL SOUP', grams: 250, kcal_100g: 60 });
+  const sum2 = await r2.json();
+  const after = (db.prepare('SELECT COUNT(*) AS n FROM foods').get() as { n: number }).n;
+  assert.equal(after, before + 1, 'no duplicate food');
+  assert.equal((db.prepare('SELECT food_id FROM food_log WHERE id = ?').get(sum2.added_id) as { food_id: number }).food_id, created.id);
+  assert.equal((db.prepare('SELECT last_grams FROM foods WHERE id = ?').get(created.id) as { last_grams: number }).last_grams, 250);
+});
+
+test('no auto-food for dining orders, zero-calorie payloads, or opted-out entries', async () => {
+  const count = () => (db.prepare('SELECT COUNT(*) AS n FROM foods').get() as { n: number }).n;
+  const before = count();
+  await post('/api/food-log', { date: '2026-05-03', meal_slot: 'dinner', name: 'Some Cafe · bowl', grams: 400, kcal_100g: 150, eating_out: 1 });
+  await post('/api/food-log', { date: '2026-05-03', meal_slot: 'dinner', name: 'Mystery', grams: 100, kcal_100g: 0 });
+  await post('/api/food-log', { date: '2026-05-03', meal_slot: 'dinner', name: 'One-off Dish', grams: 200, kcal_100g: 120, auto_food: false });
+  assert.equal(count(), before, 'none of these grow the library');
+});
+
 test('erase-everything requires the confirmation token', async () => {
   assert.equal((await post('/api/dev/reset', {})).status, 400);
   assert.equal((await post('/api/dev/reset', { confirm: 'ERASE' })).status, 200);

@@ -91,7 +91,8 @@ export function DishBuilderTab({ slot, date, goDay }: { slot: string; date: stri
   async function logPortion() {
     if (!ateGrams || cooked <= 0) return;
     try {
-      await api.foodLog.add({ date, meal_slot: slot, name: name.trim() || 'Dish', grams: ateGrams, kcal_100g: per100.kcal, protein_100g: per100.protein, carb_100g: per100.carb, fat_100g: per100.fat });
+      // auto_food off: "Save dish to my foods" below is the explicit way into the library
+      await api.foodLog.add({ date, meal_slot: slot, name: name.trim() || 'Dish', grams: ateGrams, kcal_100g: per100.kcal, protein_100g: per100.protein, carb_100g: per100.carb, fat_100g: per100.fat, auto_food: false });
     } catch {
       showToast('Couldn’t log that — try again', { kind: 'error' });
       return;

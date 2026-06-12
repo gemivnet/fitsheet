@@ -290,6 +290,8 @@ export interface NewLogEntry {
   fat_100g: number;
   unit_mode?: 'grams' | 'servings' | null;
   eating_out?: number;
+  /** Set false to keep this entry out of the auto-learned foods library. */
+  auto_food?: boolean;
 }
 
 export interface RestaurantComponent {

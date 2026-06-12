@@ -109,6 +109,33 @@ function detectStreakMilestones(db: DB, date: string): void {
   for (const threshold of [7, 30]) if (streak >= threshold) ins.run(threshold, date, nowIso());
 }
 
+/**
+ * Link a food_id-less log entry to her library: exact case-insensitive name match first,
+ * else create a 'described' food so it can be suggested and re-logged in one tap later.
+ * Skips: dining orders (eating_out — those have their own save flow), zero-calorie payloads,
+ * the 'Food' fallback name, and callers that opt out (auto_food: false, e.g. the dish
+ * builder's log-a-portion, whose "Save dish" button is the explicit library affordance).
+ * Matching is exact-only on purpose — "scrambled egg" vs "scrambled eggs" makes a dupe,
+ * but a false fuzzy merge would silently log the wrong nutrition, which is worse.
+ */
+function resolveFoodId(db: DB, b: Record<string, any>, ts: string): { id: number | null; created: boolean } {
+  const name = typeof b.name === 'string' ? b.name.trim() : '';
+  if (!name || name === 'Food') return { id: null, created: false };
+  const existing = db.prepare('SELECT id FROM foods WHERE LOWER(name) = LOWER(?) ORDER BY updated_at DESC LIMIT 1').get(name) as { id: number } | undefined;
+  if (existing) return { id: existing.id, created: false };
+  const kcal100 = finiteNum(b.kcal_100g) ?? 0;
+  if (kcal100 <= 0 || b.eating_out || b.auto_food === false) return { id: null, created: false };
+  const info = db
+    .prepare(
+      'INSERT INTO foods (name,brand,barcode,source,off_id,serving_g,serving_label,unit_name,restaurant,eating_out,kcal_100g,protein_100g,carb_100g,fat_100g,label_photo,is_favorite,created_at,updated_at) ' +
+        'VALUES (?,NULL,NULL,?,NULL,NULL,NULL,NULL,NULL,0,?,?,?,?,NULL,0,?,?)',
+    )
+    .run(name, 'described', kcal100, finiteNum(b.protein_100g) ?? 0, finiteNum(b.carb_100g) ?? 0, finiteNum(b.fat_100g) ?? 0, ts, ts);
+  const id = Number(info.lastInsertRowid);
+  writeAudit(db, { entity: 'food', entityId: id, action: 'create' });
+  return { id, created: true };
+}
+
 export function foodLogRouter(db: DB): Router {
   const r = Router();
 
@@ -203,24 +230,34 @@ export function foodLogRouter(db: DB): Router {
     const protein = round((finiteNum(b.protein_100g) ?? 0) * factor, 1);
     const carb = round((finiteNum(b.carb_100g) ?? 0) * factor, 1);
     const fat = round((finiteNum(b.fat_100g) ?? 0) * factor, 1);
+    const ts = nowIso();
+    // The learning loop: a log without a food_id (Describe, usual meal, meal plan, recipe)
+    // still teaches the app — link it to an existing food by name, or save it as a new one,
+    // so it feeds suggestions, "your usual", and the AI's personal context from now on.
+    let foodId: number | null = b.food_id ?? null;
+    let createdFood = false;
+    if (foodId == null) {
+      const resolved = resolveFoodId(db, b, ts);
+      foodId = resolved.id;
+      createdFood = resolved.created;
+    }
     // eating-out flag: explicit from the client, else inherited from the saved food.
     let eatingOut = b.eating_out != null ? (b.eating_out ? 1 : 0) : 0;
-    if (b.eating_out == null && b.food_id != null) {
-      const f = db.prepare('SELECT eating_out FROM foods WHERE id = ?').get(b.food_id) as { eating_out: number } | undefined;
+    if (b.eating_out == null && foodId != null && !createdFood) {
+      const f = db.prepare('SELECT eating_out FROM foods WHERE id = ?').get(foodId) as { eating_out: number } | undefined;
       eatingOut = f?.eating_out ? 1 : 0;
     }
-    const ts = nowIso();
     const info = db
       .prepare(
         'INSERT INTO food_log (day_date,meal_slot,food_id,name,grams,kcal,protein,carb,fat,sort_order,eating_out,created_at,hour_local) ' +
           'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
       )
-      .run(date, slot, b.food_id ?? null, b.name ?? 'Food', grams, kcal, protein, carb, fat, Date.now() % 100000, eatingOut, ts, hourOfDay(b.hour));
+      .run(date, slot, foodId, b.name ?? 'Food', grams, kcal, protein, carb, fat, Date.now() % 100000, eatingOut, ts, hourOfDay(b.hour));
     // Remember how this food was entered (grams vs servings) and the amount, so re-adding
     // it pre-fills the same way. Bumping updated_at also floats it up the "My foods" list.
-    if (b.food_id != null) {
+    if (foodId != null) {
       const um = b.unit_mode === 'servings' ? 'servings' : b.unit_mode === 'grams' ? 'grams' : null;
-      db.prepare('UPDATE foods SET pref_unit_mode = COALESCE(?, pref_unit_mode), last_grams = ?, updated_at = ? WHERE id = ?').run(um, grams, ts, b.food_id);
+      db.prepare('UPDATE foods SET pref_unit_mode = COALESCE(?, pref_unit_mode), last_grams = ?, updated_at = ? WHERE id = ?').run(um, grams, ts, foodId);
     }
     const addedId = Number(info.lastInsertRowid);
     invalidatePersonalContext(); // her habits just changed
