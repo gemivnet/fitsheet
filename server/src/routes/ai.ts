@@ -16,6 +16,12 @@ import { nowIso, titleCase, todayStr } from '../util';
 
 const NO_KEY = { error: 'no_api_key' };
 
+// AI failures are logged in full server-side; clients get a clean error code only.
+function aiFail(res: { status: (n: number) => { json: (o: unknown) => unknown } }, what: string, e: unknown): void {
+  console.warn(`[ai] ${what} failed:`, e);
+  res.status(502).json({ error: `${what}_failed` });
+}
+
 function cacheCheckin(db: DB, note: string): void {
   db.prepare(
     "INSERT INTO settings (key,value_json,updated_at) VALUES ('checkin',?,?) " +
@@ -34,7 +40,8 @@ export function aiRouter(db: DB): Router {
       const nutrition = await extractLabel(req.file.path, req.file.mimetype);
       res.json({ nutrition, label_photo: req.file.filename, confidence: nutrition?.confidence ?? 'low' });
     } catch (e) {
-      res.status(502).json({ error: 'extract_failed', label_photo: req.file.filename, nutrition: null, detail: String(e) });
+      console.warn('[ai] extract-label failed:', e);
+      res.status(502).json({ error: 'extract_failed', label_photo: req.file.filename, nutrition: null });
     }
   });
 
@@ -58,7 +65,7 @@ export function aiRouter(db: DB): Router {
     try {
       res.json({ items: await parseFood(text, personalFoodsHint(db)) });
     } catch (e) {
-      res.status(502).json({ error: 'parse_failed', detail: String(e) });
+      aiFail(res, 'parse', e);
     }
   });
 
@@ -69,7 +76,7 @@ export function aiRouter(db: DB): Router {
     try {
       res.json({ items: await parseFoodPhoto(req.file.path, req.file.mimetype) });
     } catch (e) {
-      res.status(502).json({ error: 'parse_failed', detail: String(e) });
+      aiFail(res, 'parse', e);
     }
   });
 
@@ -109,7 +116,7 @@ export function aiRouter(db: DB): Router {
     try {
       res.json({ recipe: await parseRecipe(text) });
     } catch (e) {
-      res.status(502).json({ error: 'parse_failed', detail: String(e) });
+      aiFail(res, 'parse', e);
     }
   });
 
@@ -142,7 +149,7 @@ export function aiRouter(db: DB): Router {
       }
       res.json({ item: parsed, cached: false });
     } catch (e) {
-      res.status(502).json({ error: 'failed', detail: String(e) });
+      aiFail(res, 'restaurant_item', e);
     }
   });
 
@@ -174,7 +181,7 @@ export function aiRouter(db: DB): Router {
       for (const c of comps) ins.run(restaurant, c.name, c.category, c.grams, c.kcal, c.protein_g, c.carb_g, c.fat_g, c.default_on ? 1 : 0, order++, ts, ts);
       res.json({ components: comps });
     } catch (e) {
-      res.status(502).json({ error: 'failed', detail: String(e) });
+      aiFail(res, 'menu', e);
     }
   });
 
@@ -197,9 +204,11 @@ export function aiRouter(db: DB): Router {
       );
       let order = 0;
       for (const c of comps) ins.run(restaurant, c.name, c.category, c.grams, c.kcal, c.protein_g, c.carb_g, c.fat_g, c.default_on ? 1 : 0, order++, ts, ts);
+      if (comps.length === 0) console.warn(`[ai] menu stream salvaged 0 components for ${restaurant}`);
       send({ done: true, count: comps.length });
     } catch (e) {
-      send({ error: String(e) });
+      console.warn('[ai] menu stream failed:', e);
+      send({ error: 'menu_failed' });
     } finally {
       res.end();
     }
@@ -229,7 +238,8 @@ export function aiRouter(db: DB): Router {
       cacheCheckin(db, note);
       res.json({ note });
     } catch (e) {
-      res.json({ note: cached?.note ?? null, error: String(e) });
+      console.warn('[ai] checkin failed:', e);
+      res.json({ note: cached?.note ?? null, error: 'checkin_failed' });
     }
   });
 
@@ -240,7 +250,7 @@ export function aiRouter(db: DB): Router {
       cacheCheckin(db, note);
       res.json({ note });
     } catch (e) {
-      res.status(502).json({ error: 'failed', detail: String(e) });
+      aiFail(res, 'checkin', e);
     }
   });
 
@@ -251,7 +261,7 @@ export function aiRouter(db: DB): Router {
     try {
       res.json({ plan: await generateMealPlan(db, days) });
     } catch (e) {
-      res.status(502).json({ error: 'plan_failed', detail: String(e) });
+      aiFail(res, 'plan', e);
     }
   });
 

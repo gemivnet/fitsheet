@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import { writeAudit } from '../audit';
 import type { DB } from '../db/index';
-import { nowIso, todayStr } from '../util';
+import { isDayStr, nowIso, todayStr } from '../util';
 
 export function supplementsRouter(db: DB): Router {
   const r = Router();
@@ -14,7 +14,7 @@ export function supplementsRouter(db: DB): Router {
 
   // today's checklist with a taken flag
   r.get('/today', (req, res) => {
-    const date = (req.query.date as string) || todayStr();
+    const date = isDayStr(req.query.date) ? req.query.date : todayStr();
     res.json(
       db
         .prepare(
@@ -60,7 +60,7 @@ export function supplementsRouter(db: DB): Router {
   // tick / untick for a day
   r.post('/:id/toggle', (req, res) => {
     const id = Number(req.params.id);
-    const date = String(req.body?.date ?? todayStr());
+    const date = isDayStr(req.body?.date) ? req.body.date : todayStr();
     const taken = req.body?.taken !== false;
     if (taken) db.prepare('INSERT OR IGNORE INTO supplement_log (supplement_id, day_date, created_at) VALUES (?,?,?)').run(id, date, nowIso());
     else db.prepare('DELETE FROM supplement_log WHERE supplement_id = ? AND day_date = ?').run(id, date);

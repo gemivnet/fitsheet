@@ -39,7 +39,10 @@ function mapProduct(p: any): OffFood | null {
 export async function offBarcode(code: string): Promise<OffFood | null> {
   const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=code,product_name,generic_name,brands,serving_size,serving_quantity,nutriments`;
   const r = await fetch(url, { headers: { 'User-Agent': UA } });
-  if (!r.ok) return null;
+  if (!r.ok) {
+    console.warn(`[off] barcode lookup failed: ${r.status}`);
+    return null;
+  }
   const j: any = await r.json();
   if (j.status !== 1 || !j.product) return null;
   return mapProduct(j.product);
@@ -51,7 +54,10 @@ export async function offSearch(q: string, limit = 20): Promise<OffFood[]> {
     `https://search.openfoodfacts.org/search?q=${encodeURIComponent(q)}&page_size=${limit}` +
     `&fields=code,product_name,generic_name,brands,serving_size,serving_quantity,nutriments`;
   const r = await fetch(url, { headers: { 'User-Agent': UA } });
-  if (!r.ok) return [];
+  if (!r.ok) {
+    console.warn(`[off] search failed: ${r.status}`);
+    return [];
+  }
   const j: any = await r.json();
   const hits: any[] = Array.isArray(j.hits) ? j.hits : [];
   return hits.map(mapProduct).filter((x): x is OffFood => x !== null && !!x.name && x.kcal_100g > 0);

@@ -3,7 +3,7 @@ import { invalidatePersonalContext } from '../ai/personalContext';
 import { writeAudit } from '../audit';
 import type { DB } from '../db/index';
 import { getSettings } from '../settings';
-import { addDaysStr, clamp, hourOfDay, nowIso, round, todayStr } from '../util';
+import { addDaysStr, clamp, finiteNum, hourOfDay, isDayStr, nowIso, round, todayStr } from '../util';
 
 const SLOTS = ['breakfast', 'lunch', 'dinner', 'snacks'] as const;
 
@@ -164,14 +164,15 @@ export function foodLogRouter(db: DB): Router {
 
   r.post('/', (req, res) => {
     const b = (req.body ?? {}) as Record<string, any>;
-    const date = b.date || todayStr();
+    const date = isDayStr(b.date) ? b.date : todayStr();
     const slot = SLOTS.includes(b.meal_slot) ? b.meal_slot : 'snacks';
-    const grams = Number(b.grams) || 0;
+    const grams = finiteNum(b.grams);
+    if (grams == null || grams <= 0) return res.status(400).json({ error: 'grams must be a positive number' });
     const factor = grams / 100;
-    const kcal = round(Number(b.kcal_100g ?? 0) * factor, 0);
-    const protein = round(Number(b.protein_100g ?? 0) * factor, 1);
-    const carb = round(Number(b.carb_100g ?? 0) * factor, 1);
-    const fat = round(Number(b.fat_100g ?? 0) * factor, 1);
+    const kcal = round((finiteNum(b.kcal_100g) ?? 0) * factor, 0);
+    const protein = round((finiteNum(b.protein_100g) ?? 0) * factor, 1);
+    const carb = round((finiteNum(b.carb_100g) ?? 0) * factor, 1);
+    const fat = round((finiteNum(b.fat_100g) ?? 0) * factor, 1);
     // eating-out flag: explicit from the client, else inherited from the saved food.
     let eatingOut = b.eating_out != null ? (b.eating_out ? 1 : 0) : 0;
     if (b.eating_out == null && b.food_id != null) {
@@ -203,9 +204,11 @@ export function foodLogRouter(db: DB): Router {
     if (!row) return res.status(404).json({ error: 'not_found' });
     const b = (req.body ?? {}) as Record<string, any>;
     let { grams, kcal, protein, carb, fat } = row;
-    if (b.grams != null && row.grams > 0) {
-      const ratio = Number(b.grams) / row.grams;
-      grams = Number(b.grams);
+    const newGrams = finiteNum(b.grams);
+    if (b.grams != null && (newGrams == null || newGrams <= 0)) return res.status(400).json({ error: 'grams must be a positive number' });
+    if (newGrams != null && row.grams > 0) {
+      const ratio = newGrams / row.grams;
+      grams = newGrams;
       kcal = round(row.kcal * ratio, 0);
       protein = round(row.protein * ratio, 1);
       carb = round(row.carb * ratio, 1);
@@ -220,9 +223,11 @@ export function foodLogRouter(db: DB): Router {
   r.delete('/:id', (req, res) => {
     const id = Number(req.params.id);
     const row = db.prepare('SELECT day_date FROM food_log WHERE id = ?').get(id) as { day_date: string } | undefined;
+    if (!row) return res.status(404).json({ error: 'not_found' });
     db.prepare('DELETE FROM food_log WHERE id = ?').run(id);
+    invalidatePersonalContext();
     writeAudit(db, { entity: 'food_log', entityId: id, action: 'delete' });
-    res.json(daySummary(db, row?.day_date || todayStr()));
+    res.json(daySummary(db, row.day_date));
   });
 
   return r;

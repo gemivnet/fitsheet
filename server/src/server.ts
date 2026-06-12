@@ -24,7 +24,9 @@ import { workoutsRouter } from './routes/workouts';
 
 export function buildServer(db: DB) {
   const app = express();
-  app.use(cors());
+  // Same-origin in production (the server serves the PWA); CORS_ORIGIN can pin it down,
+  // the permissive default keeps Expo dev on another port working.
+  app.use(cors(process.env.CORS_ORIGIN ? { origin: process.env.CORS_ORIGIN } : undefined));
   app.use(express.json({ limit: '5mb' }));
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, name: 'fitsheet' }));
@@ -57,10 +59,16 @@ export function buildServer(db: DB) {
     next();
   });
 
+  // Unknown API paths get a JSON 404 (instead of the HTML fallthrough).
+  app.use('/api', (_req: Request, res: Response) => res.status(404).json({ error: 'not_found' }));
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     console.error('[error]', err);
-    res.status(500).json({ error: 'server_error', detail: err instanceof Error ? err.message : String(err) });
+    // Bad uploads (wrong type / too big) are a client problem, not a server crash.
+    const msg = err instanceof Error ? err.message : '';
+    if (msg.includes('only image uploads') || msg.includes('File too large')) return res.status(400).json({ error: 'bad_upload' });
+    res.status(500).json({ error: 'server_error' });
   });
 
   return app;

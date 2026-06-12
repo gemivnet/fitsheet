@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { invalidatePersonalContext } from '../ai/personalContext';
 import { writeAudit } from '../audit';
 import type { DB } from '../db/index';
 import { nowIso, titleCase } from '../util';
@@ -154,6 +155,7 @@ export function foodsRouter(db: DB): Router {
         updated_at: ts,
       });
     const id = Number(info.lastInsertRowid);
+    invalidatePersonalContext();
     writeAudit(db, { entity: 'food', entityId: id, action: 'create' });
     res.json(db.prepare('SELECT * FROM foods WHERE id = ?').get(id));
   });
@@ -169,6 +171,7 @@ export function foodsRouter(db: DB): Router {
     db.prepare(
       'UPDATE foods SET name=@name,brand=@brand,barcode=@barcode,source=@source,off_id=@off_id,serving_g=@serving_g,serving_label=@serving_label,unit_name=@unit_name,restaurant=@restaurant,eating_out=@eating_out,kcal_100g=@kcal_100g,protein_100g=@protein_100g,carb_100g=@carb_100g,fat_100g=@fat_100g,label_photo=@label_photo,is_favorite=@is_favorite,updated_at=@updated_at WHERE id=@id',
     ).run({ ...next, id });
+    invalidatePersonalContext(); // edited macros/names feed the AI's food hints
     writeAudit(db, { entity: 'food', entityId: id, action: 'update' });
     res.json(db.prepare('SELECT * FROM foods WHERE id = ?').get(id));
   });
@@ -176,6 +179,7 @@ export function foodsRouter(db: DB): Router {
   r.delete('/:id', (req, res) => {
     const id = Number(req.params.id);
     db.prepare('DELETE FROM foods WHERE id = ?').run(id);
+    invalidatePersonalContext();
     writeAudit(db, { entity: 'food', entityId: id, action: 'delete' });
     res.json({ ok: true });
   });

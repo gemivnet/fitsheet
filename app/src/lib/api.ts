@@ -356,6 +356,7 @@ export const api = {
     list: () => req<WeightEntry[]>('GET', '/api/weight'),
     log: (e: { entry_date?: string; weight_lb: number; note?: string }) =>
       req<{ entry: WeightEntry; milestones: { threshold_lb: number }[] }>('POST', '/api/weight', { entry_date: todayStr(), ...e }),
+    update: (id: number, p: { weight_lb?: number; note?: string | null }) => req<WeightEntry>('PATCH', `/api/weight/${id}`, p),
     remove: (id: number) => req('DELETE', `/api/weight/${id}`),
     goal: () => req<WeightGoal>('GET', '/api/weight/goal'),
     setGoal: (g: { start_lb?: number | null; target_lb?: number | null }) => req<WeightGoal>('PUT', '/api/weight/goal', g),
@@ -439,6 +440,6 @@ export const api = {
   },
 
   dev: {
-    reset: () => req('POST', '/api/dev/reset'),
+    reset: () => req('POST', '/api/dev/reset', { confirm: 'ERASE' }),
   },
 };
