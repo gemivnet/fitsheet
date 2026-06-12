@@ -1,6 +1,7 @@
 // parseFood.ts — natural-language meal description → individual foods with estimated grams + nutrition.
 
 import { claudeText, extractJson } from './client';
+import { ParsedFoodArraySchema } from './schemas';
 
 export interface ParsedFood {
   name: string;
@@ -26,6 +27,10 @@ export async function parseFood(text: string, personalFoods = '', slotHint = '')
       '[{"name": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number}]',
     maxTokens: 1024,
   });
-  const arr = extractJson<ParsedFood[]>(out);
-  return Array.isArray(arr) ? arr.filter((x) => x && x.name && Number(x.grams) > 0) : [];
+  const parsed = ParsedFoodArraySchema.safeParse(extractJson(out));
+  if (!parsed.success) {
+    console.warn('[ai] parse-food reply failed validation:', parsed.error.issues.slice(0, 3));
+    return [];
+  }
+  return parsed.data.filter((x) => x.grams > 0);
 }

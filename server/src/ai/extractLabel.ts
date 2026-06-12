@@ -3,6 +3,7 @@
 
 import { readFileSync } from 'node:fs';
 import { claudeText, extractJson, imageBlock } from './client';
+import { ExtractedNutritionSchema } from './schemas';
 
 export interface ExtractedNutrition {
   name: string | null;
@@ -32,5 +33,10 @@ export async function extractLabel(filePath: string, mediaType: string): Promise
     system: SYSTEM,
     content: [imageBlock(base64, mediaType), { type: 'text', text: USER }],
   });
-  return extractJson<ExtractedNutrition>(text);
+  const parsed = ExtractedNutritionSchema.safeParse(extractJson(text));
+  if (!parsed.success) {
+    console.warn('[ai] extract-label reply failed validation:', parsed.error.issues.slice(0, 3));
+    return null;
+  }
+  return parsed.data;
 }

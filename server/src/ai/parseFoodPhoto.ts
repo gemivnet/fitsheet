@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { claudeText, extractJson, imageBlock } from './client';
 import type { ParsedFood } from './parseFood';
+import { ParsedFoodArraySchema } from './schemas';
 
 export async function parseFoodPhoto(filePath: string, mediaType: string, personalFoods = ''): Promise<ParsedFood[]> {
   const base64 = readFileSync(filePath).toString('base64');
@@ -24,6 +25,10 @@ export async function parseFoodPhoto(filePath: string, mediaType: string, person
     ],
     maxTokens: 1024,
   });
-  const arr = extractJson<ParsedFood[]>(out);
-  return Array.isArray(arr) ? arr.filter((x) => x && x.name && Number(x.grams) > 0) : [];
+  const parsed = ParsedFoodArraySchema.safeParse(extractJson(out));
+  if (!parsed.success) {
+    console.warn('[ai] parse-food-photo reply failed validation:', parsed.error.issues.slice(0, 3));
+    return [];
+  }
+  return parsed.data.filter((x) => x.grams > 0);
 }

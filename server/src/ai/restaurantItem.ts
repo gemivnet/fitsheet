@@ -3,6 +3,7 @@
 // each with calories/macros and an estimated portion weight, so she ticks what she actually got.
 
 import { claudeText, extractJson } from './client';
+import { RestaurantItemSchema } from './schemas';
 
 export interface RestaurantComponent {
   name: string;
@@ -142,10 +143,12 @@ export async function restaurantItem(restaurant: string, item: string, menuNames
       '{"name": string, "components": [{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}], "note": string, "confidence": "published"|"estimated"}',
     maxTokens: 1500,
   });
-  const obj = extractJson<RestaurantItem>(out);
-  if (!obj || !Array.isArray(obj.components)) return null;
-  obj.components = cleanComponents(obj.components);
+  const parsed = RestaurantItemSchema.safeParse(extractJson(out));
+  if (!parsed.success) {
+    console.warn('[ai] restaurant-item reply failed validation:', parsed.error.issues.slice(0, 3));
+    return null;
+  }
+  const obj: RestaurantItem = { ...parsed.data, components: cleanComponents(parsed.data.components) };
   if (!obj.components.length) return null;
-  obj.confidence = obj.confidence === 'published' ? 'published' : 'estimated';
   return obj;
 }

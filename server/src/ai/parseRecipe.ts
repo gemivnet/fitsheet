@@ -1,6 +1,7 @@
 // parseRecipe.ts — pasted recipe text → structured recipe fields for the gallery.
 
 import { claudeText, extractJson } from './client';
+import { ParsedRecipeSchema } from './schemas';
 
 export interface ParsedRecipe {
   name: string | null;
@@ -23,5 +24,10 @@ export async function parseRecipe(text: string): Promise<ParsedRecipe | null> {
       '"tags": string[], "ingredients": string, "steps": string}',
     maxTokens: 1200,
   });
-  return extractJson<ParsedRecipe>(out);
+  const parsed = ParsedRecipeSchema.safeParse(extractJson(out));
+  if (!parsed.success) {
+    console.warn('[ai] parse-recipe reply failed validation:', parsed.error.issues.slice(0, 3));
+    return null;
+  }
+  return parsed.data;
 }
