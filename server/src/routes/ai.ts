@@ -7,11 +7,12 @@ import { parseRecipe } from '../ai/parseRecipe';
 import { personalFoodsHint, restaurantHistory } from '../ai/personalContext';
 import { claudeStream } from '../ai/client';
 import { complete } from '../ai/complete';
+import { generateDayInsights } from '../ai/dayInsights';
 import { cleanComponents, FULL_MENU_SYSTEM, fullMenuContent, restaurantFullMenu, restaurantItem, salvageObjects } from '../ai/restaurantItem';
 import { hasAnthropicKey } from '../config';
 import type { DB } from '../db/index';
 import { upload } from '../upload';
-import { nowIso, titleCase } from '../util';
+import { nowIso, titleCase, todayStr } from '../util';
 
 const NO_KEY = { error: 'no_api_key' };
 
@@ -69,6 +70,34 @@ export function aiRouter(db: DB): Router {
       res.json({ items: await parseFoodPhoto(req.file.path, req.file.mimetype) });
     } catch (e) {
       res.status(502).json({ error: 'parse_failed', detail: String(e) });
+    }
+  });
+
+  // ── end-of-day insights (cached; regenerates only when the day's calories change) ──
+  r.get('/day-summary', async (req, res) => {
+    const date = (req.query.date as string) || todayStr();
+    const total = Math.round((db.prepare('SELECT SUM(kcal) AS k FROM food_log WHERE day_date = ?').get(date) as { k: number | null }).k ?? 0);
+    const row = db.prepare("SELECT value_json FROM settings WHERE key = 'day_summary'").get() as { value_json: string } | undefined;
+    let cached: { date: string; kcal: number; note: string } | null = null;
+    if (row) {
+      try {
+        cached = JSON.parse(row.value_json);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (cached && cached.date === date && cached.kcal === total) return res.json({ note: cached.note });
+    if (!hasAnthropicKey()) return res.json({ note: cached?.date === date ? cached.note : null });
+    try {
+      const note = await generateDayInsights(db, date);
+      if (note) {
+        db.prepare(
+          "INSERT INTO settings (key,value_json,updated_at) VALUES ('day_summary',?,?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+        ).run(JSON.stringify({ date, kcal: total, note }), nowIso());
+      }
+      res.json({ note });
+    } catch {
+      res.json({ note: cached?.date === date ? cached.note : null });
     }
   });
 

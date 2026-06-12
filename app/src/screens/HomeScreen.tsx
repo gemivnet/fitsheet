@@ -32,6 +32,11 @@ export function HomeScreen() {
   const curSlot = slotForNow();
   const usual = useQuery({ queryKey: ['usual', curSlot, todayStr()], queryFn: () => api.foodLog.usual(curSlot, todayStr()) });
 
+  // End-of-day recap — only fetch (and generate) once dinner's logged or it's evening, with food in.
+  const dToday = dash.data?.today;
+  const showRecap = !!dToday && dToday.totals.kcal > 0 && ((dToday.slots?.dinner ?? []).length > 0 || !!dToday.slots_complete?.dinner || new Date().getHours() >= 19);
+  const recap = useQuery({ queryKey: ['day-summary', todayStr(), Math.round(dToday?.totals.kcal ?? 0)], queryFn: () => api.ai.daySummary(todayStr()), enabled: showRecap, staleTime: 30 * 60 * 1000 });
+
   useFocusEffect(useCallback(() => void dash.refetch(), [dash.refetch]));
 
   const complete = useMutation({
@@ -105,6 +110,22 @@ export function HomeScreen() {
         </View>
 
         <CheckinCard />
+
+        {recap.data?.note ? (
+          <Card pad={18} style={{ marginBottom: 16, backgroundColor: t.accentSofter }}>
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+              <View style={{ width: 30, height: 30, borderRadius: 999, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="trend" size={16} stroke={2.4} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <SectionLabel style={{ marginBottom: 4 }}>Today&rsquo;s recap</SectionLabel>
+                <T w={700} size={15} style={{ lineHeight: 22 }}>
+                  {recap.data.note}
+                </T>
+              </View>
+            </View>
+          </Card>
+        ) : null}
 
         {usual.data?.found && (today.slots?.[usual.data.slot] ?? []).length === 0 ? <UsualMealCard meal={usual.data} /> : null}
 
