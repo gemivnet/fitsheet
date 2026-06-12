@@ -4,7 +4,7 @@ import React, { useCallback, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, EmptyState, Icon, Screen, SectionLabel, SegmentedControl, Sheet, T, TextField } from '../components';
+import { Button, Card, Chip, EmptyState, Icon, Screen, SectionLabel, SegmentedControl, Sheet, showToast, T, TextField } from '../components';
 import { api, type WalkPreset, type Workout } from '../lib/api';
 import { confirmAction } from '../lib/dialog';
 import { addDaysStr, prettyDate, todayStr } from '../lib/date';
@@ -32,6 +32,7 @@ function Workouts() {
   useFocusEffect(useCallback(() => void list.refetch(), [list.refetch]));
   const [plan, setPlan] = useState(false);
   const [adhoc, setAdhoc] = useState(false);
+  const [editing, setEditing] = useState<Workout | null>(null);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['workouts'] });
@@ -40,15 +41,48 @@ function Workouts() {
   const complete = useMutation({ mutationFn: (id: number) => api.workouts.complete(id), onSuccess: invalidate });
   const remove = useMutation({ mutationFn: (id: number) => api.workouts.remove(id), onSuccess: invalidate });
 
+  // planned workouts whose day has passed shouldn't haunt the main list forever
+  const today = todayStr();
+  const overdue = (list.data ?? []).filter((w) => w.kind === 'planned' && w.scheduled_date && w.scheduled_date < today && !w.completed_at);
+  const current = (list.data ?? []).filter((w) => !overdue.includes(w));
+
   return (
     <View>
-      {list.data && list.data.length ? (
-        list.data.map((w) => <WorkoutCard key={w.id} w={w} onComplete={() => complete.mutate(w.id)} onRemove={() => remove.mutate(w.id)} />)
-      ) : (
+      {overdue.length ? (
+        <View style={{ marginBottom: 14 }}>
+          <SectionLabel style={{ marginBottom: 8 }}>Catch up</SectionLabel>
+          <Card pad={6}>
+            {overdue.map((w, i) => (
+              <View key={w.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: i === overdue.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <T w={700} size={15} color={t.text2} numberOfLines={1}>
+                    {w.title}
+                  </T>
+                  <T w={600} size={12} color={t.text3}>
+                    was {prettyDate(w.scheduled_date!)}
+                  </T>
+                </View>
+                <Button variant="success" icon="check" size="sm" onPress={() => complete.mutate(w.id)}>
+                  Did it
+                </Button>
+                <Pressable onPress={() => confirmAction('Skip this workout?', w.title, () => remove.mutate(w.id), { confirmText: 'Skip' })} hitSlop={8}>
+                  <T w={800} size={13} color={t.text3}>
+                    Skip
+                  </T>
+                </Pressable>
+              </View>
+            ))}
+          </Card>
+        </View>
+      ) : null}
+
+      {current.length ? (
+        current.map((w) => <WorkoutCard key={w.id} w={w} onComplete={() => complete.mutate(w.id)} onRemove={() => remove.mutate(w.id)} onEdit={() => setEditing(w)} />)
+      ) : !overdue.length ? (
         <Card style={{ marginBottom: 14 }}>
           <EmptyState icon="activity" title="Plan your week" body="Add a workout with a link to follow, then check it off when you're done." />
         </Card>
-      )}
+      ) : null}
 
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
         <View style={{ flex: 1 }}>
@@ -65,16 +99,17 @@ function Workouts() {
 
       <WorkoutForm visible={plan} kind="planned" onClose={() => setPlan(false)} onSaved={invalidate} />
       <WorkoutForm visible={adhoc} kind="adhoc" onClose={() => setAdhoc(false)} onSaved={invalidate} />
+      <WorkoutForm visible={!!editing} kind={editing?.kind === 'adhoc' ? 'adhoc' : 'planned'} initial={editing} onClose={() => setEditing(null)} onSaved={invalidate} />
     </View>
   );
 }
 
-function WorkoutCard({ w, onComplete, onRemove }: { w: Workout; onComplete: () => void; onRemove: () => void }) {
+function WorkoutCard({ w, onComplete, onRemove, onEdit }: { w: Workout; onComplete: () => void; onRemove: () => void; onEdit: () => void }) {
   const t = useTheme();
   const done = !!w.completed_at;
   return (
     <Card pad={18} style={{ marginBottom: 12 }}>
-      <Pressable onLongPress={() => confirmAction('Remove workout?', w.title, onRemove, { confirmText: 'Remove', destructive: true })} delayLongPress={300}>
+      <Pressable onPress={onEdit} onLongPress={() => confirmAction('Remove workout?', w.title, onRemove, { confirmText: 'Remove', destructive: true })} delayLongPress={300}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flex: 1, paddingRight: 10 }}>
             <T w={800} size={17} numberOfLines={2}>
@@ -116,29 +151,53 @@ function WorkoutCard({ w, onComplete, onRemove }: { w: Workout; onComplete: () =
   );
 }
 
-function WorkoutForm({ visible, kind, onClose, onSaved }: { visible: boolean; kind: 'planned' | 'adhoc'; onClose: () => void; onSaved: () => void }) {
+function WorkoutForm({
+  visible,
+  kind,
+  initial,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  kind: 'planned' | 'adhoc';
+  initial?: Workout | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(todayStr());
   const [minutes, setMinutes] = useState('');
   const [url, setUrl] = useState('');
+  // seed for edit mode (or reset for a fresh add) each time the sheet opens
+  React.useEffect(() => {
+    if (!visible) return;
+    setTitle(initial?.title ?? '');
+    setDate(initial?.scheduled_date ?? todayStr());
+    setMinutes(initial?.planned_minutes != null ? String(initial.planned_minutes) : '');
+    setUrl(initial?.external_url ?? '');
+  }, [visible, initial]);
+
   const save = async () => {
     if (!title.trim()) return;
-    await api.workouts.create({
+    const payload = {
       title: title.trim(),
-      kind,
       scheduled_date: kind === 'planned' ? date : null,
       planned_minutes: minutes ? Number(minutes) : null,
       external_url: url || null,
-    });
-    setTitle('');
-    setMinutes('');
-    setUrl('');
+    };
+    try {
+      if (initial) await api.workouts.update(initial.id, payload);
+      else await api.workouts.create({ ...payload, kind });
+    } catch {
+      showToast('Couldn’t save that — try again', { kind: 'error' });
+      return;
+    }
     onSaved();
     onClose();
   };
   return (
-    <Sheet visible={visible} onClose={onClose} title={kind === 'planned' ? 'Plan a workout' : 'Log a workout'}>
-      <TextField label="Title" value={title} onChangeText={setTitle} placeholder="e.g. Full-body strength" autoFocus />
+    <Sheet visible={visible} onClose={onClose} title={initial ? 'Edit workout' : kind === 'planned' ? 'Plan a workout' : 'Log a workout'}>
+      <TextField label="Title" value={title} onChangeText={setTitle} placeholder="e.g. Full-body strength" autoFocus={!initial} />
       {kind === 'planned' ? <TextField label="Date (YYYY-MM-DD)" value={date} onChangeText={setDate} placeholder="2026-06-10" /> : null}
       <TextField label="Minutes" value={minutes} onChangeText={setMinutes} keyboardType="numeric" suffix="min" />
       {kind === 'planned' ? <TextField label="Link (optional)" value={url} onChangeText={setUrl} placeholder="YouTube / web link" /> : null}
@@ -159,6 +218,7 @@ function Walks() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['walks', 'log'] });
   const quick = useMutation({ mutationFn: (p: WalkPreset) => api.walks.quick(p.id), onSuccess: invalidate });
+  const removeWalk = useMutation({ mutationFn: (id: number) => api.walks.removeLog(id), onSuccess: invalidate });
 
   return (
     <View>
@@ -179,7 +239,12 @@ function Walks() {
       {log.data && log.data.length ? (
         <Card pad={6}>
           {log.data.slice(0, 12).map((w, i) => (
-            <View key={w.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderBottomWidth: i === Math.min(11, log.data!.length - 1) ? 0 : 1, borderBottomColor: t.hairline }}>
+            <Pressable
+              key={w.id}
+              onLongPress={() => confirmAction('Remove this walk?', `${w.label ?? 'Walk'} · ${prettyDate(w.walk_date)}`, () => removeWalk.mutate(w.id), { confirmText: 'Remove', destructive: true })}
+              delayLongPress={300}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderBottomWidth: i === Math.min(11, log.data!.length - 1) ? 0 : 1, borderBottomColor: t.hairline }}
+            >
               <View>
                 <T w={800} size={15}>
                   {w.label ?? 'Walk'}
@@ -192,7 +257,7 @@ function Walks() {
                 {w.minutes ? `${w.minutes} min` : ''}
                 {w.distance ? `  ${w.distance} mi` : ''}
               </T>
-            </View>
+            </Pressable>
           ))}
         </Card>
       ) : (
@@ -200,6 +265,11 @@ function Walks() {
           No walks logged yet — tap a preset above.
         </T>
       )}
+      {log.data && log.data.length ? (
+        <T w={600} size={12} color={t.text3} style={{ textAlign: 'center', marginTop: 10 }}>
+          Long-press a walk to remove it.
+        </T>
+      ) : null}
 
       <ManualWalk visible={manual} onClose={() => setManual(false)} onSaved={invalidate} />
     </View>
