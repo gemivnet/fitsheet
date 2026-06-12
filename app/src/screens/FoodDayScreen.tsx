@@ -6,7 +6,7 @@ import { Pressable, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, FoodRow, Icon, NumberPad, ProgressBar, RoundBtn, Screen, Sheet, showToast, T, useNumberField } from '../components';
+import { BankLine, Button, Card, Chip, FoodRow, Icon, NumberPad, ProgressBar, RoundBtn, Screen, Sheet, showToast, T, useNumberField } from '../components';
 import { api, type LogEntry } from '../lib/api';
 import { confirmAction } from '../lib/dialog';
 import { addDaysStr, isToday, prettyDate, slotForNow, todayStr } from '../lib/date';
@@ -104,29 +104,7 @@ export function FoodDayScreen({ navigation }: Props) {
           </T>
         </View>
         <ProgressBar value={eaten} max={target || 1} height={14} showOver />
-        {banking && d && (d.bank_week !== 0 || d.bank_snoozed) ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 10 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-              <Icon name={d.bank_snoozed ? 'bell' : d.bank_week > 0 ? 'trend' : 'flame'} size={14} stroke={2.4} color={d.bank_snoozed ? t.text3 : d.bank_week > 0 ? t.success : t.caution} />
-              <T w={700} size={13} color={t.text2}>
-                {d.bank_snoozed
-                  ? 'Bank paused today — using your plain goal'
-                  : d.bank_week > 0
-                    ? `+${d.bank_week} banked this week — added to today`
-                    : `${Math.abs(d.bank_week)} over this week — trimmed from today`}
-              </T>
-            </View>
-            <Pressable
-              onPress={() => snooze.mutate(!d.bank_snoozed)}
-              hitSlop={8}
-              style={{ paddingVertical: 5, paddingHorizontal: 11, borderRadius: 999, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.hairline }}
-            >
-              <T w={800} size={12} color={t.accentPress}>
-                {d.bank_snoozed ? 'Undo' : 'Snooze'}
-              </T>
-            </Pressable>
-          </View>
-        ) : null}
+        {banking && d && (d.bank_week !== 0 || d.bank_snoozed) ? <BankLine day={d} onSnooze={(on) => snooze.mutate(on)} /> : null}
       </Card>
 
       {SLOTS.map(({ key, label }) => {

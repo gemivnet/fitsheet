@@ -103,12 +103,14 @@ export function foodsRouter(db: DB): Router {
     const scored = foods.map((f) => {
       const s = stat.get(f.id);
       const days = s?.last_at ? Math.max(0, (now - Date.parse(s.last_at)) / 86_400_000) : 999;
+      // log scales instead of hard caps: a 100-times food outranks a 20-times food,
+      // but only gently — habits compete fairly with recency and sequence signals.
       const c = {
         seq: (seq.get(f.id) ?? 0) * 6.0, // "I always add this right after the last thing"
-        hour: Math.min(hourNear.get(f.id) ?? 0, 10) * 2.5, // logged around this time of day
+        hour: Math.log1p(hourNear.get(f.id) ?? 0) * 3.0, // logged around this time of day
         slot: (s?.slot_count ?? 0) * 3.0, // this meal slot
         recency: s ? 12 * Math.exp(-days / 10) : 0,
-        freq: s ? Math.min(s.total, 20) * 1.0 : 0,
+        freq: s ? Math.log1p(s.total) * 4.0 : 0,
         fav: f.is_favorite ? 2.0 : 0,
       };
       const score = c.seq + c.hour + c.slot + c.recency + c.freq + c.fav;

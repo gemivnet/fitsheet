@@ -5,7 +5,7 @@ import { Linking, Pressable, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { applyNumberKey, Button, CalorieRing, Card, CelebrationModal, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, T } from '../components';
+import { applyNumberKey, BankLine, Button, CalorieRing, Card, CelebrationModal, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, T } from '../components';
 import { api, type Suggestion, type SupplementToday, type UsualMeal } from '../lib/api';
 import { DAY_UNDER_GOAL, FIRST_LOG_OF_DAY, pick, WORKOUT_DONE } from '../lib/encouragement';
 import { slotForNow, todayStr } from '../lib/date';
@@ -162,29 +162,7 @@ export function HomeScreen() {
             <MacroBar label="Carbs" value={Math.round(today.totals.carb)} goal={s.carb_goal_g} varName="carb" />
             <MacroBar label="Fat" value={Math.round(today.totals.fat)} goal={s.fat_goal_g} varName="fat" />
           </View>
-          {banking && (today.bank_week !== 0 || today.bank_snoozed) ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 16 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                <Icon name={today.bank_snoozed ? 'bell' : today.bank_week > 0 ? 'trend' : 'flame'} size={14} stroke={2.4} color={today.bank_snoozed ? t.text3 : today.bank_week > 0 ? t.success : t.caution} />
-                <T w={700} size={13} color={t.text2}>
-                  {today.bank_snoozed
-                    ? 'Bank paused today — using your plain goal'
-                    : today.bank_week > 0
-                      ? `+${today.bank_week} banked this week — folded into today`
-                      : `${Math.abs(today.bank_week)} over this week — trimmed from today`}
-                </T>
-              </View>
-              <Pressable
-                onPress={() => snooze.mutate(!today.bank_snoozed)}
-                hitSlop={8}
-                style={{ paddingVertical: 5, paddingHorizontal: 11, borderRadius: 999, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.hairline }}
-              >
-                <T w={800} size={12} color={t.accentPress}>
-                  {today.bank_snoozed ? 'Undo' : 'Snooze'}
-                </T>
-              </Pressable>
-            </View>
-          ) : null}
+          {banking && (today.bank_week !== 0 || today.bank_snoozed) ? <BankLine day={today} onSnooze={(on) => snooze.mutate(on)} /> : null}
         </Card>
 
         {/* today's meals — split by time of day, each with a "complete" tick */}

@@ -50,10 +50,14 @@ export function daySummary(db: DB, date: string) {
     return r.k == null ? null : r.k;
   };
   let bankWeek = 0;
+  let bankSkipped = 0; // logged days that looked partial/erroneous and were left out
   for (let i = 1; i <= 6; i++) {
     const v = intakeOn(addDaysStr(date, -i));
     if (v == null) continue; // unlogged day — nothing to bank
-    if (v < bankLo || v > bankHi) continue; // insanely off — ignore (logging gap or error)
+    if (v < bankLo || v > bankHi) {
+      bankSkipped++; // insanely off — ignore (logging gap or error), but tell her
+      continue;
+    }
     bankWeek += goal - v; // under = positive (headroom), over = negative
   }
   bankWeek = Math.round(bankWeek);
@@ -70,6 +74,8 @@ export function daySummary(db: DB, date: string) {
   const snoozed = !!db.prepare('SELECT 1 FROM bank_snooze WHERE day_date = ?').get(date);
   const adjustment = s.weekly_banking && !snoozed ? clamp(bankWeek, -800, 800) : 0;
   const adjustedGoal = Math.max(1200, goal + adjustment);
+  // Transparency: did the ±800 clamp or the 1200 floor change what the bank really says?
+  const bankCapped = s.weekly_banking && !snoozed && (adjustment !== bankWeek || goal + adjustment < 1200);
 
   return {
     date,
@@ -81,6 +87,8 @@ export function daySummary(db: DB, date: string) {
     slots_complete: slotsComplete,
     banking: s.weekly_banking,
     bank_week: bankWeek,
+    bank_capped: bankCapped,
+    bank_skipped_days: bankSkipped,
     bank_yesterday: bankYesterday,
     bank_snoozed: snoozed,
     adjusted_goal: adjustedGoal,
@@ -110,35 +118,44 @@ export function foodLogRouter(db: DB): Router {
   });
 
   // "Your usual meal": foods she logs in this slot on most days → a template she can tweak + log.
+  // Weekday and weekend habits differ (weekday toast vs weekend pancakes), so the requested
+  // date's day-of-week picks which population to mine. Macros come from the LATEST time she
+  // logged each food (brands change) rather than a long-run average.
   r.get('/usual', (req, res) => {
     const slot = SLOTS.includes(req.query.slot as (typeof SLOTS)[number]) ? (req.query.slot as string) : 'breakfast';
-    const date = (req.query.date as string) || todayStr();
-    const from = addDaysStr(date, -14);
+    const date = isDayStr(req.query.date) ? req.query.date : todayStr();
+    const dow = new Date(`${date}T00:00:00`).getDay();
+    const weekend = dow === 0 || dow === 6;
+    // weekends are rarer, so look further back to find the pattern
+    const from = addDaysStr(date, weekend ? -28 : -14);
     const to = addDaysStr(date, -1);
-    const totalDays = (db.prepare('SELECT COUNT(DISTINCT day_date) AS d FROM food_log WHERE meal_slot = ? AND day_date BETWEEN ? AND ?').get(slot, from, to) as { d: number }).d;
-    if (totalDays < 2) return res.json({ found: false, slot, days_seen: totalDays, items: [] });
+    const dowFilter = weekend ? "strftime('%w', day_date) IN ('0','6')" : "strftime('%w', day_date) NOT IN ('0','6')";
     const rows = db
-      .prepare(
-        'SELECT name, MAX(food_id) AS food_id, COUNT(DISTINCT day_date) AS days, AVG(grams) AS grams, ' +
-          'AVG(CASE WHEN grams > 0 THEN kcal * 100.0 / grams ELSE 0 END) AS kcal_100g, ' +
-          'AVG(CASE WHEN grams > 0 THEN protein * 100.0 / grams ELSE 0 END) AS protein_100g, ' +
-          'AVG(CASE WHEN grams > 0 THEN carb * 100.0 / grams ELSE 0 END) AS carb_100g, ' +
-          'AVG(CASE WHEN grams > 0 THEN fat * 100.0 / grams ELSE 0 END) AS fat_100g ' +
-          'FROM food_log WHERE meal_slot = ? AND day_date BETWEEN ? AND ? GROUP BY name',
-      )
-      .all(slot, from, to) as { name: string; food_id: number | null; days: number; grams: number; kcal_100g: number; protein_100g: number; carb_100g: number; fat_100g: number }[];
-    const threshold = Math.max(2, Math.ceil(totalDays * 0.5)); // appears on at least half the logged days
-    const items = rows
-      .filter((r2) => r2.days >= threshold)
-      .sort((a, b) => b.days - a.days)
-      .map((r2) => ({
-        food_id: r2.food_id ?? null,
-        name: r2.name,
-        grams: Math.round(r2.grams),
-        kcal_100g: Math.round(r2.kcal_100g),
-        protein_100g: round(r2.protein_100g, 1),
-        carb_100g: round(r2.carb_100g, 1),
-        fat_100g: round(r2.fat_100g, 1),
+      .prepare(`SELECT * FROM food_log WHERE meal_slot = ? AND day_date BETWEEN ? AND ? AND ${dowFilter} ORDER BY day_date DESC, id DESC`)
+      .all(slot, from, to) as LogRow[];
+    const totalDays = new Set(rows.map((x) => x.day_date)).size;
+    if (totalDays < 2) return res.json({ found: false, slot, days_seen: totalDays, items: [] });
+
+    // group by name: distinct-day count + the most recent variant (rows are newest-first)
+    const byName = new Map<string, { latest: LogRow; days: Set<string> }>();
+    for (const row of rows) {
+      const key = row.name.toLowerCase();
+      const g = byName.get(key);
+      if (g) g.days.add(row.day_date);
+      else byName.set(key, { latest: row, days: new Set([row.day_date]) });
+    }
+    const threshold = Math.max(2, Math.ceil(totalDays * 0.6)); // a real habit, not a coin flip
+    const items = [...byName.values()]
+      .filter((g) => g.days.size >= threshold && g.latest.grams > 0)
+      .sort((a, b) => b.days.size - a.days.size)
+      .map(({ latest }) => ({
+        food_id: latest.food_id ?? null,
+        name: latest.name,
+        grams: Math.round(latest.grams),
+        kcal_100g: Math.round((latest.kcal * 100) / latest.grams),
+        protein_100g: round((latest.protein * 100) / latest.grams, 1),
+        carb_100g: round((latest.carb * 100) / latest.grams, 1),
+        fat_100g: round((latest.fat * 100) / latest.grams, 1),
       }));
     res.json({ found: items.length >= 1, slot, days_seen: totalDays, items });
   });

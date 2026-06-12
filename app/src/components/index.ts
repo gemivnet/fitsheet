@@ -24,4 +24,5 @@ export { AutocompleteField } from './AutocompleteField';
 export { NumberPad, NumberField, useNumberField, applyNumberKey } from './NumberPad';
 export { ReminderSync } from './ReminderSync';
 export { ToastHost, showToast, type ToastOptions } from './Toast';
+export { BankLine } from './BankLine';
 export { CalorieCalculator } from './CalorieCalculator';

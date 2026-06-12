@@ -115,6 +115,8 @@ export interface DaySummary {
   slots_complete: Record<string, boolean>;
   banking: boolean;
   bank_week: number;
+  bank_capped: boolean;
+  bank_skipped_days: number;
   bank_yesterday: number | null;
   bank_snoozed: boolean;
   adjusted_goal: number;
