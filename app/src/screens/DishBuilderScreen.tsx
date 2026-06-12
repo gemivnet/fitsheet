@@ -44,6 +44,8 @@ export function DishBuilderScreen({ navigation, route }: Props) {
   const [cookedWeight, setCookedWeight] = useState('');
   const [portion, setPortion] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [relog, setRelog] = useState<Food | null>(null);
+  const dishes = useQuery({ queryKey: ['foods', 'dishes'], queryFn: () => api.foods.dishes() });
   const [active, setActive] = useState<'cooked' | 'ate'>('ate');
   const fresh = useRef(true);
   const focus = (f: 'cooked' | 'ate') => {
@@ -87,9 +89,10 @@ export function DishBuilderScreen({ navigation, route }: Props) {
   }
   async function saveDish() {
     if (cooked <= 0 || !ingredients.length) return;
-    await api.foods.create({ name: name.trim() || 'Dish', source: 'custom', serving_g: ateGrams || null, kcal_100g: per100.kcal, protein_100g: per100.protein, carb_100g: per100.carb, fat_100g: per100.fat, is_favorite: 1 } as any);
+    await api.foods.create({ name: name.trim() || 'Dish', source: 'dish', serving_g: ateGrams || null, kcal_100g: per100.kcal, protein_100g: per100.protein, carb_100g: per100.carb, fat_100g: per100.fat, is_favorite: 1 } as any);
     qc.invalidateQueries({ queryKey: ['foods'] });
-    notify('Saved', 'This dish is in your Favorites for next time.');
+    qc.invalidateQueries({ queryKey: ['foods', 'dishes'] });
+    notify('Saved', 'This dish is in your dishes for next time.');
   }
 
   return (
@@ -107,6 +110,36 @@ export function DishBuilderScreen({ navigation, route }: Props) {
       <T w={600} size={14} color={t.text2} style={{ marginBottom: 16, lineHeight: 20 }}>
         Add what went into the dish, enter the cooked weight, then how much you ate — we&rsquo;ll do the math.
       </T>
+
+      {dishes.data && dishes.data.length ? (
+        <View style={{ marginBottom: 18 }}>
+          <SectionLabel style={{ marginBottom: 10 }}>Your dishes · log a portion</SectionLabel>
+          <Card pad={6}>
+            {dishes.data.map((d, i) => (
+              <Pressable
+                key={d.id}
+                onPress={() => setRelog(d)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderBottomWidth: i === dishes.data!.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}
+              >
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <T w={800} size={15} numberOfLines={1}>
+                    {d.name}
+                  </T>
+                  <T num w={700} size={12} color={t.text3}>
+                    {Math.round(d.kcal_100g)} kcal / 100 g
+                  </T>
+                </View>
+                <T w={800} size={13} color={t.accentPress}>
+                  I had → g
+                </T>
+              </Pressable>
+            ))}
+          </Card>
+          <T w={600} size={12} color={t.text3} style={{ marginTop: 8, marginLeft: 4 }}>
+            Or build a new one below.
+          </T>
+        </View>
+      ) : null}
 
       <TextField label="Dish name" value={name} onChangeText={setName} placeholder="e.g. Chicken curry" />
 
@@ -200,7 +233,52 @@ export function DishBuilderScreen({ navigation, route }: Props) {
       </T>
 
       <IngredientPicker visible={pickerOpen} onClose={() => setPickerOpen(false)} onAdd={addIngredient} />
+      <DishRelogSheet dish={relog} slot={slot} date={date} onClose={() => setRelog(null)} onLogged={() => { setRelog(null); navigation.goBack(); }} />
     </Screen>
+  );
+}
+
+function DishRelogSheet({ dish, slot, date, onClose, onLogged }: { dish: Food | null; slot: string; date: string; onClose: () => void; onLogged: () => void }) {
+  const t = useTheme();
+  const qc = useQueryClient();
+  const grams = useNumberField('100');
+  useEffect(() => {
+    if (dish) grams.reset(String(Math.round(dish.serving_g ?? 100)));
+  }, [dish]);
+  if (!dish) return null;
+  const g = Number(grams.value) || 0;
+  const kcal = Math.round((dish.kcal_100g * g) / 100);
+  const log = async () => {
+    await api.foodLog.add({ date, meal_slot: slot, food_id: dish.id, name: dish.name, grams: g, kcal_100g: dish.kcal_100g, protein_100g: dish.protein_100g, carb_100g: dish.carb_100g, fat_100g: dish.fat_100g });
+    qc.invalidateQueries({ queryKey: ['foodlog', date] });
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
+    onLogged();
+  };
+  return (
+    <Sheet visible={!!dish} onClose={onClose} title={dish.name}>
+      <T w={700} size={14} color={t.text3} style={{ marginTop: -6, marginBottom: 12 }}>
+        How much of this dish did you have?
+      </T>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5 }}>
+          <T num w={800} size={30}>
+            {grams.value || '0'}
+          </T>
+          <T w={800} size={15} color={t.text3}>
+            g
+          </T>
+        </View>
+        <T num w={800} size={24} color={t.accentPress}>
+          {kcal} kcal
+        </T>
+      </View>
+      <View style={{ marginBottom: 16 }}>
+        <NumberPad onKey={grams.press} />
+      </View>
+      <Button full size="lg" icon="check" onPress={log}>
+        Log to {slot}
+      </Button>
+    </Sheet>
   );
 }
 

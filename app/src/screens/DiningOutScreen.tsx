@@ -315,7 +315,10 @@ export function DiningOutScreen({ navigation, route }: Props) {
           ) : null}
 
           {/* build via AI */}
-          <SectionLabel style={{ marginBottom: 10 }}>Build an order</SectionLabel>
+          <SectionLabel style={{ marginBottom: 4 }}>Build an order</SectionLabel>
+          <T w={600} size={12} color={t.text3} style={{ marginBottom: 10 }}>
+            Type your order and we&rsquo;ll tick the matching items in the menu below — then adjust amounts or extras.
+          </T>
           <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end', marginBottom: 4 }}>
             <View style={{ flex: 1 }}>
               <AutocompleteField

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { generateCheckin, generateMealPlan } from '../ai/coach';
 import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
+import { parseFoodPhoto } from '../ai/parseFoodPhoto';
 import { parseRecipe } from '../ai/parseRecipe';
 import { claudeStream } from '../ai/client';
 import { complete } from '../ai/complete';
@@ -54,6 +55,17 @@ export function aiRouter(db: DB): Router {
     if (!text) return res.status(400).json({ error: 'text required' });
     try {
       res.json({ items: await parseFood(text) });
+    } catch (e) {
+      res.status(502).json({ error: 'parse_failed', detail: String(e) });
+    }
+  });
+
+  // ── natural-language logging from a photo of her notes ───────────────────
+  r.post('/parse-food-photo', upload.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'file required' });
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    try {
+      res.json({ items: await parseFoodPhoto(req.file.path, req.file.mimetype) });
     } catch (e) {
       res.status(502).json({ error: 'parse_failed', detail: String(e) });
     }

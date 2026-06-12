@@ -3,10 +3,11 @@
 // After logging, the screen STAYS OPEN and the list re-ranks to what you usually log next.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, TextInput, View } from 'react-native';
+import { Animated, Easing, Pressable, ScrollView, TextInput, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AutocompleteField, Button, Card, Chip, Icon, NumberPad, Screen, SectionLabel, SegmentedControl, Sheet, T, TextField, useNumberField } from '../components';
+import { AutocompleteField, Button, Card, Chip, Icon, type IconName, NumberPad, Screen, SectionLabel, Sheet, T, TextField, useNumberField } from '../components';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { api, type Food, type OffFood, type Suggestion } from '../lib/api';
 import { Font, useTheme } from '../theme';
@@ -19,6 +20,15 @@ const MEALS: { key: string; label: string }[] = [
   { key: 'lunch', label: 'Lunch' },
   { key: 'dinner', label: 'Dinner' },
   { key: 'snacks', label: 'Snacks' },
+];
+
+// The add modes, in order. Find/Scan/Describe render inline; Dining/Dish open their own screens.
+const MODES: { key: string; label: string; icon: IconName }[] = [
+  { key: 'Find', label: 'Find', icon: 'search' },
+  { key: 'Scan', label: 'Scan', icon: 'camera' },
+  { key: 'Describe', label: 'Describe', icon: 'edit' },
+  { key: 'Dining', label: 'Dining out', icon: 'food' },
+  { key: 'Dish', label: 'Build a dish', icon: 'flame' },
 ];
 
 interface Picked {
@@ -141,22 +151,11 @@ export function AddFoodScreen({ navigation, route }: Props) {
           <T w={800} size={26}>
             Add food
           </T>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-            <Pressable
-              onPress={() => setTab('Scan')}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: t.accentSoft, paddingVertical: 8, paddingHorizontal: 13, borderRadius: 999 }}
-            >
-              <Icon name="camera" size={16} stroke={2.4} color={t.accentPress} />
-              <T w={800} size={14} color={t.accentPress}>
-                Scan
-              </T>
-            </Pressable>
-            <Pressable onPress={() => navigation.goBack()}>
-              <T w={800} size={16} color={t.accentPress}>
-                Done
-              </T>
-            </Pressable>
-          </View>
+          <Pressable onPress={() => navigation.goBack()}>
+            <T w={800} size={16} color={t.accentPress}>
+              Done
+            </T>
+          </Pressable>
         </View>
 
         {/* meal selector — every add drops into this meal (override per item in the sheet) */}
@@ -168,23 +167,33 @@ export function AddFoodScreen({ navigation, route }: Props) {
           ))}
         </View>
 
-        <View style={{ marginBottom: 16 }}>
-          <SegmentedControl options={['Find', 'Scan', 'Describe']} value={tab} onChange={setTab} />
-        </View>
+        {/* add modes, in order: find your foods → scan → describe → dining out → build a dish */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }} contentContainerStyle={{ gap: 8, paddingRight: 8 }}>
+          {MODES.map((m) => {
+            const on = tab === m.key;
+            const act = () => (m.key === 'Dining' ? navigation.navigate('DiningOut', { slot, date }) : m.key === 'Dish' ? navigation.navigate('DishBuilder', { slot, date }) : setTab(m.key));
+            return (
+              <Pressable
+                key={m.key}
+                onPress={act}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999, backgroundColor: on ? t.accent : t.surface2, borderWidth: on ? 0 : 1, borderColor: t.hairline }}
+              >
+                <Icon name={m.icon} size={16} stroke={2.4} color={on ? '#fff' : t.text2} />
+                <T w={800} size={14} color={on ? '#fff' : t.text2}>
+                  {m.label}
+                </T>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
 
         {tab === 'Find' ? <FindTab slot={slot} date={date} onPick={setPicked} onQuickLog={quickLog} /> : null}
         {tab === 'Scan' ? <ScanTab onPick={setPicked} /> : null}
         {tab === 'Describe' ? <DescribeTab slot={slot} date={date} onDone={() => navigation.goBack()} /> : null}
 
-        <View style={{ alignItems: 'center', paddingVertical: 16, gap: 10 }}>
-          <Button variant="soft" icon="food" full onPress={() => navigation.navigate('DiningOut', { slot, date })}>
-            Dining out 🍔
-          </Button>
+        <View style={{ alignItems: 'center', paddingVertical: 16 }}>
           <Button variant="ghost" icon="plus" onPress={() => navigation.navigate('LabelCapture', { slot, date })}>
-            Add a custom food
-          </Button>
-          <Button variant="ghost" icon="food" onPress={() => navigation.navigate('DishBuilder', { slot, date })}>
-            Build a dish (big meal)
+            Add a custom food (snap a label)
           </Button>
         </View>
 
@@ -421,23 +430,32 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
   const [padIdx, setPadIdx] = useState<number | null>(null);
   const pad = useNumberField('0');
 
-  const parse = useMutation({
-    mutationFn: () => api.ai.parseFood(text),
-    onSuccess: (out) => {
-      setError(null);
-      setItems(
-        out.items.map((p) => ({
-          name: p.name,
-          grams: Math.round(p.grams),
-          kcal_100g: p.grams > 0 ? Math.round((p.kcal / p.grams) * 100) : 0,
-          protein_100g: p.grams > 0 ? Math.round((p.protein_g / p.grams) * 100) : 0,
-          carb_100g: p.grams > 0 ? Math.round((p.carb_g / p.grams) * 100) : 0,
-          fat_100g: p.grams > 0 ? Math.round((p.fat_g / p.grams) * 100) : 0,
-        })),
-      );
-    },
-    onError: (e: any) => setError(e?.status === 503 ? 'AI is off — add ANTHROPIC_API_KEY on the server.' : 'Couldn’t read that — try the Find tab.'),
-  });
+  const applyItems = (parsed: { name: string; grams: number; kcal: number; protein_g: number; carb_g: number; fat_g: number }[]) => {
+    setError(null);
+    setItems(
+      parsed.map((p) => ({
+        name: p.name,
+        grams: Math.round(p.grams),
+        kcal_100g: p.grams > 0 ? Math.round((p.kcal / p.grams) * 100) : 0,
+        protein_100g: p.grams > 0 ? Math.round((p.protein_g / p.grams) * 100) : 0,
+        carb_100g: p.grams > 0 ? Math.round((p.carb_g / p.grams) * 100) : 0,
+        fat_100g: p.grams > 0 ? Math.round((p.fat_g / p.grams) * 100) : 0,
+      })),
+    );
+  };
+  const onParseError = (e: any) => setError(e?.status === 503 ? 'AI is off — add ANTHROPIC_API_KEY on the server.' : 'Couldn’t read that — try the Find tab.');
+
+  const parse = useMutation({ mutationFn: () => api.ai.parseFood(text), onSuccess: (out) => applyItems(out.items), onError: onParseError });
+  const parsePhoto = useMutation({ mutationFn: (form: FormData) => api.ai.parseFoodPhoto(form), onSuccess: (out) => applyItems(out.items), onError: onParseError });
+
+  const pickNotes = async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
+    if (res.canceled || !res.assets?.[0]) return;
+    const a = res.assets[0];
+    const form = new FormData();
+    form.append('file', { uri: a.uri, name: 'notes.jpg', type: a.mimeType ?? 'image/jpeg' } as any);
+    parsePhoto.mutate(form);
+  };
 
   const setGrams = (i: number, g: number) => setItems((xs) => (xs ? xs.map((it, idx) => (idx === i ? { ...it, grams: g } : it)) : xs));
   const remove = (i: number) => setItems((xs) => (xs ? xs.filter((_, idx) => idx !== i) : xs));
@@ -462,10 +480,20 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
 
   return (
     <View>
-      <TextField label="What did you eat?" value={text} onChangeText={setText} placeholder="e.g. 2 eggs, toast with butter, and a latte" multiline autoFocus />
-      <Button full icon="check" onPress={() => parse.mutate()}>
-        {parse.isPending ? 'Reading…' : 'Estimate it'}
-      </Button>
+      <TextField label="What did you eat?" value={text} onChangeText={setText} placeholder="e.g. 2 eggs, toast with butter, and a latte" multiline />
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Button full icon="check" onPress={() => parse.mutate()}>
+            {parse.isPending ? 'Reading…' : 'Estimate it'}
+          </Button>
+        </View>
+        <Button variant="soft" icon="camera" onPress={pickNotes}>
+          {parsePhoto.isPending ? 'Reading…' : 'Snap notes'}
+        </Button>
+      </View>
+      <T w={600} size={12} color={t.text3} style={{ marginTop: 8 }}>
+        Type what you ate, or snap a photo of your notes and we&rsquo;ll read it.
+      </T>
       {error ? (
         <T w={700} size={14} color={t.caution} style={{ marginTop: 12 }}>
           {error}

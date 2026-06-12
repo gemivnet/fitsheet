@@ -299,6 +299,7 @@ export const api = {
     barcodeLocal: (code: string) => req<Food>('GET', `/api/foods/barcode/${encodeURIComponent(code)}`),
     restaurants: () => req<{ restaurant: string; count: number }[]>('GET', '/api/foods/restaurants'),
     dining: (restaurant?: string) => req<Food[]>('GET', `/api/foods?eating_out=1${restaurant ? `&restaurant=${encodeURIComponent(restaurant)}` : ''}`),
+    dishes: () => req<Food[]>('GET', '/api/foods?dish=1'),
   },
 
   off: {
@@ -381,6 +382,7 @@ export const api = {
     extractLabel: (form: FormData) =>
       req<{ nutrition: any; label_photo: string; confidence?: string; error?: string }>('POST', '/api/ai/extract-label', form),
     parseFood: (text: string) => req<{ items: ParsedFood[] }>('POST', '/api/ai/parse-food', { text }),
+    parseFoodPhoto: (form: FormData) => req<{ items: ParsedFood[]; error?: string }>('POST', '/api/ai/parse-food-photo', form),
     parseRecipe: (text: string) => req<{ recipe: ParsedRecipe | null; error?: string }>('POST', '/api/ai/parse-recipe', { text }),
     checkin: () => req<{ note: string | null }>('GET', '/api/ai/checkin'),
     refreshCheckin: () => req<{ note: string | null }>('POST', '/api/ai/checkin/refresh'),

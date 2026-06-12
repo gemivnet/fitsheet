@@ -16,6 +16,8 @@ export function foodsRouter(db: DB): Router {
       res.json(db.prepare('SELECT * FROM foods WHERE name LIKE ? ORDER BY is_favorite DESC, updated_at DESC LIMIT 100').all(`%${q}%`));
     } else if (restaurant) {
       res.json(db.prepare('SELECT * FROM foods WHERE restaurant = ? ORDER BY updated_at DESC LIMIT 100').all(restaurant));
+    } else if (req.query.dish === '1') {
+      res.json(db.prepare("SELECT * FROM foods WHERE source = 'dish' ORDER BY updated_at DESC LIMIT 100").all());
     } else if (req.query.eating_out === '1') {
       res.json(db.prepare('SELECT * FROM foods WHERE eating_out = 1 ORDER BY updated_at DESC LIMIT 100').all());
     } else if (req.query.favorite === '1') {
