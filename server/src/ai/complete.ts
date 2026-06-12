@@ -6,7 +6,7 @@
 import { claudeText } from './client';
 
 // A fast, cheap model for keystroke-latency completions (falls back to the configured model).
-const FAST_MODEL = 'claude-haiku-4-5-20251001';
+const FAST_MODEL = 'claude-haiku-4-5';
 
 const SYS =
   'You autocomplete a single food or restaurant item name a user is typing. Reply with ONLY the one ' +
@@ -15,24 +15,13 @@ const SYS =
   'reply with it unchanged. Output nothing but the name itself — no quotes, no explanation, no notes, ' +
   'no parentheses, no alternatives, no leading words like "Completion:".';
 
-export async function complete(text: string, context: string): Promise<string> {
-  const partial = text;
-  const run = (model?: string) =>
-    claudeText({ model, system: SYS, content: `Context: ${context || 'food item'}\nThey typed: ${JSON.stringify(partial)}\nThe full name is:`, maxTokens: 24 });
-
-  let out = '';
-  try {
-    out = await run(FAST_MODEL);
-  } catch {
-    try {
-      out = await run();
-    } catch {
-      return '';
-    }
+/** Reduce a raw model reply to a safe ghost-text suffix ('' when anything looks off). */
+export function cleanSuffix(partial: string, raw: string): string {
+  let full = (raw || '').split('\n')[0].trim();
+  // unwrap symmetric quoting only — a possessive like "Trader Joe's" must survive
+  for (const q of ['"', "'", '`']) {
+    if (full.length >= 2 && full.startsWith(q) && full.endsWith(q)) full = full.slice(1, -1).trim();
   }
-
-  // first line only, strip wrapping quotes/space
-  let full = (out || '').split('\n')[0].replace(/^[\s"'`]+/, '').replace(/[\s"'`]+$/, '');
   if (!full || full.length <= partial.length) return '';
   // must literally continue what she typed — otherwise it's prose or a wrong guess; drop it
   if (full.slice(0, partial.length).toLowerCase() !== partial.toLowerCase()) return '';
@@ -42,4 +31,23 @@ export async function complete(text: string, context: string): Promise<string> {
   if (suffix.length > 30) return '';
   if (suffix.trim().split(/\s+/).filter(Boolean).length > 5) return '';
   return suffix;
+}
+
+export async function complete(text: string, context: string): Promise<string> {
+  const partial = text;
+  const run = (model?: string) =>
+    claudeText({ model, system: SYS, content: `Context: ${context || 'food item'}\nThey typed: ${JSON.stringify(partial)}\nThe full name is:`, maxTokens: 24, timeoutMs: 10_000 });
+
+  let out = '';
+  try {
+    out = await run(FAST_MODEL);
+  } catch (e) {
+    console.warn('[ai] fast completion failed, falling back:', e);
+    try {
+      out = await run();
+    } catch {
+      return '';
+    }
+  }
+  return cleanSuffix(partial, out);
 }

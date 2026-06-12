@@ -3,18 +3,33 @@
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { Button, Card, Icon, Screen, SegmentedControl, T } from '../components';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button, Card, Icon, Screen, SegmentedControl, showToast, T } from '../components';
 import { api } from '../lib/api';
+import { todayStr } from '../lib/date';
 import { useTheme } from '../theme';
+
+const SLOTS = new Set(['breakfast', 'lunch', 'dinner', 'snacks']);
 
 export function MealPlanScreen() {
   const t = useTheme();
   const nav = useNavigation();
+  const qc = useQueryClient();
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings.get });
   const [days, setDays] = useState('3');
   const plan = useMutation({ mutationFn: () => api.ai.mealPlan(Number(days) || 3), meta: { suppressErrorToast: true } });
   const goal = settings.data?.daily_calorie_goal ?? 0;
+
+  // A plan you can act on: one tap drops a meal into today's log (kcal-true, nominal 100 g).
+  const log = useMutation({
+    mutationFn: (m: { slot: string; name: string; kcal: number }) =>
+      api.foodLog.add({ date: todayStr(), meal_slot: SLOTS.has(m.slot) ? m.slot : 'snacks', name: m.name, grams: 100, kcal_100g: m.kcal, protein_100g: 0, carb_100g: 0, fat_100g: 0 }),
+    onSuccess: (_d, m) => {
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      qc.invalidateQueries({ queryKey: ['foodlog'] });
+      showToast(`${m.name} logged for today`);
+    },
+  });
 
   return (
     <Screen>
@@ -60,8 +75,8 @@ export function MealPlanScreen() {
                 </T>
               </View>
               {d.meals.map((m, j) => (
-                <View key={j} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 7, borderBottomWidth: j === d.meals.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
-                  <View style={{ flex: 1, paddingRight: 10 }}>
+                <View key={j} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, paddingVertical: 7, borderBottomWidth: j === d.meals.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
+                  <View style={{ flex: 1, paddingRight: 4, minWidth: 0 }}>
                     <T w={700} size={12} color={t.text3} style={{ textTransform: 'capitalize' }}>
                       {m.slot}
                     </T>
@@ -72,6 +87,9 @@ export function MealPlanScreen() {
                   <T num w={800} size={14} color={t.text2}>
                     {m.kcal}
                   </T>
+                  <Pressable onPress={() => log.mutate(m)} hitSlop={8} style={{ width: 36, height: 36, borderRadius: 999, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="plus" size={18} stroke={2.6} color={t.accentPress} />
+                  </Pressable>
                 </View>
               ))}
             </Card>

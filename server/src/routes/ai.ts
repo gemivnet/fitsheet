@@ -84,6 +84,7 @@ export function aiRouter(db: DB): Router {
   r.get('/day-summary', async (req, res) => {
     const date = (req.query.date as string) || todayStr();
     const total = Math.round((db.prepare('SELECT SUM(kcal) AS k FROM food_log WHERE day_date = ?').get(date) as { k: number | null }).k ?? 0);
+    if (total === 0) return res.json({ note: null, reason: 'empty_day' });
     const row = db.prepare("SELECT value_json FROM settings WHERE key = 'day_summary'").get() as { value_json: string } | undefined;
     let cached: { date: string; kcal: number; note: string } | null = null;
     if (row) {
@@ -126,10 +127,10 @@ export function aiRouter(db: DB): Router {
     const item = String(req.body?.item ?? '').trim();
     if (!restaurant || !item) return res.status(400).json({ error: 'restaurant and item required' });
     const query = item.toLowerCase();
-    const cached = db.prepare('SELECT name, components_json FROM restaurant_menu WHERE restaurant = ? AND query = ?').get(restaurant, query) as
-      | { name: string; components_json: string }
+    const cached = db.prepare('SELECT name, components_json, confidence FROM restaurant_menu WHERE restaurant = ? AND query = ?').get(restaurant, query) as
+      | { name: string; components_json: string; confidence: string | null }
       | undefined;
-    if (cached) return res.json({ item: { name: cached.name, components: JSON.parse(cached.components_json) }, cached: true });
+    if (cached) return res.json({ item: { name: cached.name, components: JSON.parse(cached.components_json), confidence: cached.confidence ?? undefined }, cached: true });
     if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
     try {
       const menuNames = (db.prepare('SELECT name FROM restaurant_components WHERE restaurant = ? ORDER BY sort_order, name').all(restaurant) as { name: string }[]).map((r2) => r2.name);
@@ -137,9 +138,9 @@ export function aiRouter(db: DB): Router {
       if (parsed) {
         const ts = nowIso();
         db.prepare(
-          'INSERT INTO restaurant_menu (restaurant, query, name, components_json, created_at, updated_at) VALUES (?,?,?,?,?,?) ' +
-            'ON CONFLICT(restaurant, query) DO UPDATE SET name=excluded.name, components_json=excluded.components_json, updated_at=excluded.updated_at',
-        ).run(restaurant, query, parsed.name, JSON.stringify(parsed.components), ts, ts);
+          'INSERT INTO restaurant_menu (restaurant, query, name, components_json, confidence, created_at, updated_at) VALUES (?,?,?,?,?,?,?) ' +
+            'ON CONFLICT(restaurant, query) DO UPDATE SET name=excluded.name, components_json=excluded.components_json, confidence=excluded.confidence, updated_at=excluded.updated_at',
+        ).run(restaurant, query, parsed.name, JSON.stringify(parsed.components), parsed.confidence ?? null, ts, ts);
         // grow the reusable component library — INSERT OR IGNORE so her edits are never clobbered
         const ins = db.prepare(
           'INSERT OR IGNORE INTO restaurant_components (restaurant,name,category,grams,kcal,protein_g,carb_g,fat_g,default_on,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
@@ -157,13 +158,14 @@ export function aiRouter(db: DB): Router {
   r.get('/restaurant-menu', (req, res) => {
     const restaurant = titleCase(String(req.query.restaurant ?? ''));
     if (!restaurant) return res.json([]);
-    const rows = db.prepare('SELECT id, name, query, components_json FROM restaurant_menu WHERE restaurant = ? ORDER BY updated_at DESC LIMIT 50').all(restaurant) as {
+    const rows = db.prepare('SELECT id, name, query, components_json, confidence FROM restaurant_menu WHERE restaurant = ? ORDER BY updated_at DESC LIMIT 50').all(restaurant) as {
       id: number;
       name: string;
       query: string;
       components_json: string;
+      confidence: string | null;
     }[];
-    res.json(rows.map((row) => ({ id: row.id, name: row.name, query: row.query, components: JSON.parse(row.components_json) })));
+    res.json(rows.map((row) => ({ id: row.id, name: row.name, query: row.query, components: JSON.parse(row.components_json), confidence: row.confidence ?? undefined })));
   });
 
   // pull a restaurant's FULL build-your-own menu (all proteins, salsas, sides…) into the library
@@ -196,7 +198,7 @@ export function aiRouter(db: DB): Router {
     res.flushHeaders?.();
     const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
     try {
-      const full = await claudeStream({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 6000, onText: (t) => send({ t }) });
+      const full = await claudeStream({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 6000, timeoutMs: 120_000, onText: (t) => send({ t }) });
       const comps = cleanComponents(salvageObjects(full));
       const ts = nowIso();
       const ins = db.prepare(

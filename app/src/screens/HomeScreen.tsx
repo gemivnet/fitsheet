@@ -33,7 +33,7 @@ export function HomeScreen() {
   // End-of-day recap — only fetch (and generate) once dinner's logged or it's evening, with food in.
   const dToday = dash.data?.today;
   const showRecap = !!dToday && dToday.totals.kcal > 0 && ((dToday.slots?.dinner ?? []).length > 0 || !!dToday.slots_complete?.dinner || new Date().getHours() >= 19);
-  const recap = useQuery({ queryKey: ['day-summary', todayStr(), Math.round(dToday?.totals.kcal ?? 0)], queryFn: () => api.ai.daySummary(todayStr()), enabled: showRecap, staleTime: 30 * 60 * 1000 });
+  const recap = useQuery({ queryKey: ['day-summary', todayStr()], queryFn: () => api.ai.daySummary(todayStr()), enabled: showRecap, staleTime: 30 * 60 * 1000 });
 
   useFocusEffect(useCallback(() => void dash.refetch(), [dash.refetch]));
 
@@ -57,7 +57,11 @@ export function HomeScreen() {
 
   const mealComplete = useMutation({
     mutationFn: (p: { slot: string; on: boolean }) => api.foodLog.mealComplete(todayStr(), p.slot, p.on),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['dashboard'] }),
+    onSuccess: (_d, p) => {
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      // closing out dinner is the natural moment for a fresh recap
+      if (p.slot === 'dinner' && p.on) qc.invalidateQueries({ queryKey: ['day-summary'] });
+    },
   });
 
   const addTo = (slot: string) => nav.navigate('Food', { screen: 'AddFood', params: { slot, date: todayStr() } });

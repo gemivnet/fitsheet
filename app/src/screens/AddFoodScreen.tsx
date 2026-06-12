@@ -442,7 +442,12 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
       })),
     );
   };
-  const onParseError = (e: any) => setError(e?.status === 503 ? 'AI is off — add ANTHROPIC_API_KEY on the server.' : 'Couldn’t read that — try the Find tab.');
+  const onParseError = (e: any) =>
+    setError(
+      e?.status === 503
+        ? 'AI is off — add ANTHROPIC_API_KEY on the server.'
+        : 'I couldn’t make that out. Try adding rough amounts — like “2 eggs and a slice of toast” — then tap Try again.',
+    );
 
   const parse = useMutation({ mutationFn: () => api.ai.parseFood(text), onSuccess: (out) => applyItems(out.items), onError: onParseError, meta: { suppressErrorToast: true } });
   const parsePhoto = useMutation({ mutationFn: (form: FormData) => api.ai.parseFoodPhoto(form), onSuccess: (out) => applyItems(out.items), onError: onParseError, meta: { suppressErrorToast: true } });
@@ -503,9 +508,16 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
         Type what you ate, or snap a photo of your notes and we&rsquo;ll read it.
       </T>
       {error ? (
-        <T w={700} size={14} color={t.caution} style={{ marginTop: 12 }}>
-          {error}
-        </T>
+        <View style={{ marginTop: 12 }}>
+          <T w={700} size={14} color={t.caution} style={{ marginBottom: 10 }}>
+            {error}
+          </T>
+          {text.trim().length > 0 ? (
+            <Button variant="soft" icon="edit" onPress={() => parse.mutate()}>
+              {parse.isPending ? 'Reading…' : 'Try again'}
+            </Button>
+          ) : null}
+        </View>
       ) : null}
       {items && items.length ? (
         <View style={{ marginTop: 16 }}>
@@ -544,9 +556,14 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
           </View>
         </View>
       ) : items ? (
-        <T w={700} color={t.text3} style={{ marginTop: 12 }}>
-          Nothing recognized — try rephrasing.
-        </T>
+        <View style={{ marginTop: 12 }}>
+          <T w={700} color={t.text3} style={{ marginBottom: 10 }}>
+            Nothing recognized — try naming each food with a rough amount, like “a cup of rice and 2 chicken thighs”.
+          </T>
+          <Button variant="soft" icon="edit" onPress={() => parse.mutate()}>
+            {parse.isPending ? 'Reading…' : 'Try again'}
+          </Button>
+        </View>
       ) : null}
 
       <Sheet visible={padIdx != null} onClose={() => setPadIdx(null)} title={padItem?.name ?? 'Amount'}>

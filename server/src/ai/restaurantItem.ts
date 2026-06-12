@@ -18,6 +18,8 @@ export interface RestaurantItem {
   name: string;
   components: RestaurantComponent[];
   note?: string | null;
+  /** 'published' = reproduced from the chain's real nutrition; 'estimated' = the AI's best guess. */
+  confidence?: 'published' | 'estimated';
 }
 
 // Pull every COMPLETE {…} object out of a (possibly truncated) JSON array. Streamed menus can get
@@ -103,7 +105,7 @@ export const fullMenuContent = (restaurant: string): string =>
   '[{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}]';
 
 export async function restaurantFullMenu(restaurant: string): Promise<RestaurantComponent[]> {
-  const out = await claudeText({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 6000 });
+  const out = await claudeText({ system: FULL_MENU_SYSTEM, content: fullMenuContent(restaurant), maxTokens: 6000, timeoutMs: 120_000 });
   return cleanComponents(salvageObjects(out));
 }
 
@@ -131,16 +133,19 @@ export async function restaurantItem(restaurant: string, item: string, menuNames
       'For each line give the published calories, protein/carb/fat grams, portion grams, and a category ' +
       '(build-your-own: base, protein, beans, topping, salsa, cheese, side, sauce, other; fixed: burger, ' +
       'chicken, sandwich, nuggets, side, drink, breakfast, dessert). Only include this order plus what it ' +
-      'standardly comes with. If a value is genuinely not published, estimate realistically.',
+      'standardly comes with. If a value is genuinely not published, estimate realistically. Set ' +
+      '"confidence" to "published" only when you are reproducing the chain\'s real published nutrition; ' +
+      'for independent/local spots or anything you had to guess, set "confidence" to "estimated".',
     content:
       `Restaurant: ${restaurant}\nOrder: ${item}${menuHint}${historyHint}\n\n` +
       'Reply ONLY JSON, no prose: ' +
-      '{"name": string, "components": [{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}], "note": string}',
+      '{"name": string, "components": [{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}], "note": string, "confidence": "published"|"estimated"}',
     maxTokens: 1500,
   });
   const obj = extractJson<RestaurantItem>(out);
   if (!obj || !Array.isArray(obj.components)) return null;
   obj.components = cleanComponents(obj.components);
   if (!obj.components.length) return null;
+  obj.confidence = obj.confidence === 'published' ? 'published' : 'estimated';
   return obj;
 }

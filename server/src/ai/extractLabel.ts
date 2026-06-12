@@ -1,9 +1,8 @@
 // extractLabel.ts — Claude vision reads a nutrition-label photo into structured nutrition.
 // Gated by ANTHROPIC_API_KEY (route returns 503 if absent). Manual entry is the fallback.
 
-import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'node:fs';
-import { config } from '../config';
+import { claudeText, extractJson, imageBlock } from './client';
 
 export interface ExtractedNutrition {
   name: string | null;
@@ -28,31 +27,10 @@ const USER =
   'Set confidence to "low" if the label is blurry or partially unreadable.';
 
 export async function extractLabel(filePath: string, mediaType: string): Promise<ExtractedNutrition | null> {
-  const client = new Anthropic({ apiKey: config.anthropicApiKey });
   const base64 = readFileSync(filePath).toString('base64');
-  const res = await client.messages.create({
-    model: config.anthropicModel,
-    max_tokens: 1024,
+  const text = await claudeText({
     system: SYSTEM,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType as 'image/jpeg', data: base64 } },
-          { type: 'text', text: USER },
-        ],
-      },
-    ],
+    content: [imageBlock(base64, mediaType), { type: 'text', text: USER }],
   });
-  const text = res.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-  const m = /\{[\s\S]*\}/.exec(text);
-  if (!m) return null;
-  try {
-    return JSON.parse(m[0]) as ExtractedNutrition;
-  } catch {
-    return null;
-  }
+  return extractJson<ExtractedNutrition>(text);
 }

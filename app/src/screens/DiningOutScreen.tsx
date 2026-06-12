@@ -52,6 +52,7 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
   const [editMode, setEditMode] = useState(false);
   const [editing, setEditing] = useState<MenuComponent | 'new' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [estimated, setEstimated] = useState(false);
 
   const rest = restaurant.trim();
   const restaurants = useQuery({ queryKey: ['restaurants'], queryFn: api.foods.restaurants });
@@ -81,6 +82,7 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
       }
       setError(null);
       setOrderName(out.item.name);
+      setEstimated(out.item.confidence === 'estimated');
       qc.invalidateQueries({ queryKey: ['restaurant-components', rest] });
       qc.invalidateQueries({ queryKey: ['restaurant-menu', rest] });
       setPending(out.item.components.map((c: RestaurantComponent) => ({ name: c.name, on: c.default_on })));
@@ -89,9 +91,10 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
     meta: { suppressErrorToast: true },
   });
 
-  const loadCached = (name: string, comps: RestaurantComponent[]) => {
+  const loadCached = (name: string, comps: RestaurantComponent[], confidence?: 'published' | 'estimated') => {
     setOrderName(name);
     setError(null);
+    setEstimated(confidence === 'estimated');
     setPending(comps.map((c) => ({ name: c.name, on: c.default_on })));
   };
 
@@ -344,7 +347,7 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
           {cached.data && cached.data.length ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
               {cached.data.map((m) => (
-                <Chip key={m.id} icon="food" onPress={() => loadCached(m.name, m.components)}>
+                <Chip key={m.id} icon="food" onPress={() => loadCached(m.name, m.components, m.confidence)}>
                   {m.name}
                 </Chip>
               ))}
@@ -479,6 +482,11 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
                 <T w={700} size={13} color={t.text2} style={{ marginTop: 4 }}>
                   P {Math.round(totals.protein)} · C {Math.round(totals.carb)} · F {Math.round(totals.fat)} g · ~{Math.round(totals.grams)} g
                 </T>
+                {estimated ? (
+                  <T w={600} size={12} color={t.text3} style={{ marginTop: 6, lineHeight: 17 }}>
+                    Estimated — this spot may not publish nutrition, so treat these numbers as a ballpark.
+                  </T>
+                ) : null}
               </Card>
               <View style={{ gap: 10, marginTop: 12 }}>
                 <Button full size="lg" icon="check" onPress={logOrder}>

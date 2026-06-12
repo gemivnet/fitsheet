@@ -19,10 +19,12 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
   const controlsRef = useRef<any>(null);
   const last = useRef<{ code: string; at: number }>({ code: '', at: 0 });
   const [started, setStarted] = useState(false);
+  const [live, setLive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!started) return;
+    setLive(false);
     let cancelled = false;
     const g: any = globalThis as any;
     if (typeof g.window !== 'undefined' && g.window.isSecureContext === false) {
@@ -54,9 +56,14 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
           },
         );
         controlsRef.current = controls;
+        if (!cancelled) setLive(true);
       } catch (e: any) {
         const msg = String(e?.message ?? e);
-        setError(msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('denied') ? 'Camera permission was denied.' : 'Could not start the camera.');
+        setError(
+          msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('denied')
+            ? 'Camera permission was denied. To scan again, allow Camera for this app in your phone’s Settings (Settings → Apps → your browser, or Settings → Safari → Camera), then come back. The Find tab works in the meantime.'
+            : 'Could not start the camera — the Find tab works in the meantime.',
+        );
         setStarted(false);
       }
     })();
@@ -73,10 +80,21 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
 
   if (error) {
     return (
-      <View style={{ padding: 16, borderRadius: 16, backgroundColor: t.surface2 }}>
-        <T w={700} size={15} color={t.text2}>
+      <View style={{ padding: 16, borderRadius: 16, backgroundColor: t.surface2, gap: 12 }}>
+        <T w={700} size={15} color={t.text2} style={{ lineHeight: 21 }}>
           {error}
         </T>
+        <Pressable
+          onPress={() => {
+            setError(null);
+            setStarted(true);
+          }}
+          hitSlop={8}
+        >
+          <T w={800} size={14} color={t.accentPress}>
+            Try again
+          </T>
+        </Pressable>
       </View>
     );
   }
@@ -109,6 +127,13 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
         playsInline: true,
         style: { width: '100%', height: '100%', objectFit: 'cover' },
       } as any)}
+      {!live ? (
+        <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+          <T w={800} size={15} color="#fff">
+            Starting camera…
+          </T>
+        </View>
+      ) : null}
     </View>
   );
 }

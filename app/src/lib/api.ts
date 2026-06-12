@@ -292,6 +292,7 @@ export interface RestaurantItem {
   name: string;
   components: RestaurantComponent[];
   note?: string | null;
+  confidence?: 'published' | 'estimated';
 }
 export interface MenuComponent {
   id: number;
