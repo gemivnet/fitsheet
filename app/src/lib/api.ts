@@ -5,7 +5,12 @@
 // base ('') — that works over http or https and behind any hostname (Nginx Proxy Manager, etc.),
 // with no mixed-content issues. A native build (or an explicit override) uses EXPO_PUBLIC_API_URL.
 import { Platform } from 'react-native';
+import { todayStr } from './date';
 const ENV_BASE = process.env.EXPO_PUBLIC_API_URL;
+
+// The phone's local clock is authoritative for "today" / "this hour" — the server only
+// falls back to its own clock for requests that don't say (curl, old cached app shells).
+const localHour = () => new Date().getHours();
 const BASE = ENV_BASE && ENV_BASE.length > 0 ? ENV_BASE : Platform.OS === 'web' ? '' : 'http://127.0.0.1:3000';
 
 export const apiBase = BASE;
@@ -304,12 +309,12 @@ export interface MenuComponent {
 
 // ── grouped methods ─────────────────────────────────────────────────────────
 export const api = {
-  dashboard: () => req<Dashboard>('GET', '/api/dashboard'),
+  dashboard: () => req<Dashboard>('GET', `/api/dashboard?date=${todayStr()}`),
 
   settings: {
     get: () => req<Settings>('GET', '/api/settings'),
     update: (p: Partial<Settings>) => req<Settings>('PUT', '/api/settings', p),
-    reminders: () => req<any>('GET', '/api/settings/reminders'),
+    reminders: () => req<any>('GET', `/api/settings/reminders?date=${todayStr()}`),
   },
 
   foods: {
@@ -319,7 +324,8 @@ export const api = {
       const qs = new URLSearchParams();
       if (p.slot) qs.set('slot', p.slot);
       if (p.date) qs.set('date', p.date);
-      return req<Suggestion[]>('GET', `/api/foods/suggestions${qs.toString() ? `?${qs}` : ''}`);
+      qs.set('hour', String(localHour()));
+      return req<Suggestion[]>('GET', `/api/foods/suggestions?${qs}`);
     },
     create: (f: Partial<Food>) => req<Food>('POST', '/api/foods', f),
     update: (id: number, p: Partial<Food>) => req<Food>('PATCH', `/api/foods/${id}`, p),
@@ -337,7 +343,7 @@ export const api = {
 
   foodLog: {
     day: (date: string) => req<DaySummary>('GET', `/api/food-log?date=${date}`),
-    add: (e: NewLogEntry) => req<DaySummary & { added_id: number }>('POST', '/api/food-log', e),
+    add: (e: NewLogEntry) => req<DaySummary & { added_id: number }>('POST', '/api/food-log', { hour: localHour(), ...e }),
     snooze: (date: string, snoozed: boolean) => req<DaySummary>('POST', '/api/food-log/snooze', { date, snoozed }),
     mealComplete: (date: string, meal_slot: string, complete: boolean) => req<DaySummary>('POST', '/api/food-log/meal-complete', { date, meal_slot, complete }),
     diningStats: (date: string) => req<{ this_week: number; last_week: number }>('GET', `/api/food-log/dining-stats?date=${date}`),
@@ -349,7 +355,7 @@ export const api = {
   weight: {
     list: () => req<WeightEntry[]>('GET', '/api/weight'),
     log: (e: { entry_date?: string; weight_lb: number; note?: string }) =>
-      req<{ entry: WeightEntry; milestones: { threshold_lb: number }[] }>('POST', '/api/weight', e),
+      req<{ entry: WeightEntry; milestones: { threshold_lb: number }[] }>('POST', '/api/weight', { entry_date: todayStr(), ...e }),
     remove: (id: number) => req('DELETE', `/api/weight/${id}`),
     goal: () => req<WeightGoal>('GET', '/api/weight/goal'),
     setGoal: (g: { start_lb?: number | null; target_lb?: number | null }) => req<WeightGoal>('PUT', '/api/weight/goal', g),
@@ -375,14 +381,14 @@ export const api = {
     createPreset: (p: Partial<WalkPreset>) => req<WalkPreset>('POST', '/api/walks/presets', p),
     deletePreset: (id: number) => req('DELETE', `/api/walks/presets/${id}`),
     log: (from?: string, to?: string) => req<WalkLog[]>('GET', `/api/walks/log${from ? `?from=${from}&to=${to ?? from}` : ''}`),
-    quick: (presetId: number) => req<WalkLog>('POST', '/api/walks/log/quick', { preset_id: presetId }),
-    manual: (e: Partial<WalkLog>) => req<WalkLog>('POST', '/api/walks/log', e),
+    quick: (presetId: number) => req<WalkLog>('POST', '/api/walks/log/quick', { preset_id: presetId, walk_date: todayStr() }),
+    manual: (e: Partial<WalkLog>) => req<WalkLog>('POST', '/api/walks/log', { walk_date: todayStr(), ...e }),
     removeLog: (id: number) => req('DELETE', `/api/walks/log/${id}`),
   },
 
   notes: {
     list: () => req<Note[]>('GET', '/api/notes'),
-    create: (n: { body: string; mood?: string | null; note_date?: string }) => req<Note>('POST', '/api/notes', n),
+    create: (n: { body: string; mood?: string | null; note_date?: string }) => req<Note>('POST', '/api/notes', { note_date: todayStr(), ...n }),
     update: (id: number, p: Partial<Note>) => req<Note>('PATCH', `/api/notes/${id}`, p),
     remove: (id: number) => req('DELETE', `/api/notes/${id}`),
   },
@@ -398,7 +404,7 @@ export const api = {
     remove: (id: number) => req('DELETE', `/api/recipes/${id}`),
   },
 
-  analytics: { summary: () => req<Analytics>('GET', '/api/analytics/summary') },
+  analytics: { summary: () => req<Analytics>('GET', `/api/analytics/summary?date=${todayStr()}`) },
 
   supplements: {
     list: () => req<Supplement[]>('GET', '/api/supplements'),

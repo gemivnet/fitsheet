@@ -110,12 +110,11 @@ export interface AnalyticsSummary {
   };
 }
 
-export function buildAnalytics(db: DB, settings: Settings): AnalyticsSummary {
+export function buildAnalytics(db: DB, settings: Settings, today: string = todayStr()): AnalyticsSummary {
   const windowDays = settings.tdee_window_days || 21;
   const rows = db.prepare('SELECT entry_date, weight_lb, trend_lb FROM weight_entries ORDER BY entry_date ASC').all() as WeightRow[];
   const series = rows.map((r) => ({ date: r.entry_date, raw: r.weight_lb, trend: r.trend_lb ?? r.weight_lb }));
   const intake = intakeByDay(db);
-  const today = todayStr();
 
   // ── weight trend & rate over the trailing window ──────────────────────────
   let trendSlope: number | null = null; // lb/day

@@ -25,6 +25,22 @@ export function addDaysStr(s: string, n: number): string {
 
 export const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 
+/** True when s is a YYYY-MM-DD day string (the client's local calendar date is authoritative). */
+export const isDayStr = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+
+/** Coerce to a finite number, else null (Number() turns garbage into NaN, which `|| 0` hides). */
+export const finiteNum = (v: unknown): number | null => {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+/** Local hour of day (0-23) from the request, else null. */
+export const hourOfDay = (v: unknown): number | null => {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 && n <= 23 ? n : null;
+};
+
 // Title-case a name (restaurant, etc.) so "chipotle" and "Chipotle" canonicalize to one value.
 // Small connector words stay lowercase unless they're the first word.
 const SMALL_WORDS = new Set(['and', 'or', 'the', 'a', 'an', 'of', 'to', 'in', 'on', 'with', 'at', 'for', 'de', 'la', 'el', 'los', 'las', 'y']);

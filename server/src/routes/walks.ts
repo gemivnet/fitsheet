@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { writeAudit } from '../audit';
 import type { DB } from '../db/index';
-import { nowIso, todayStr } from '../util';
+import { isDayStr, nowIso, todayStr } from '../util';
 
 export function walksRouter(db: DB): Router {
   const r = Router();
@@ -41,7 +41,7 @@ export function walksRouter(db: DB): Router {
     if (!preset) return res.status(404).json({ error: 'preset_not_found' });
     const info = db
       .prepare('INSERT INTO walk_log (walk_date,preset_id,label,minutes,distance,notes,created_at) VALUES (?,?,?,?,?,?,?)')
-      .run(todayStr(), preset.id, preset.label, preset.default_minutes, preset.default_distance, null, nowIso());
+      .run(isDayStr(b.walk_date) ? b.walk_date : todayStr(), preset.id, preset.label, preset.default_minutes, preset.default_distance, null, nowIso());
     const id = Number(info.lastInsertRowid);
     writeAudit(db, { entity: 'walk', entityId: id, action: 'create' });
     res.json(db.prepare('SELECT * FROM walk_log WHERE id = ?').get(id));
@@ -52,7 +52,7 @@ export function walksRouter(db: DB): Router {
     const b = (req.body ?? {}) as Record<string, any>;
     const info = db
       .prepare('INSERT INTO walk_log (walk_date,preset_id,label,minutes,distance,notes,created_at) VALUES (?,?,?,?,?,?,?)')
-      .run(b.walk_date || todayStr(), b.preset_id ?? null, b.label ?? 'Walk', b.minutes ?? null, b.distance ?? null, b.notes ?? null, nowIso());
+      .run(isDayStr(b.walk_date) ? b.walk_date : todayStr(), b.preset_id ?? null, b.label ?? 'Walk', b.minutes ?? null, b.distance ?? null, b.notes ?? null, nowIso());
     const id = Number(info.lastInsertRowid);
     writeAudit(db, { entity: 'walk', entityId: id, action: 'create' });
     res.json(db.prepare('SELECT * FROM walk_log WHERE id = ?').get(id));

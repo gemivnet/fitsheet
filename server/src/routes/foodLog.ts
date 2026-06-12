@@ -3,7 +3,7 @@ import { invalidatePersonalContext } from '../ai/personalContext';
 import { writeAudit } from '../audit';
 import type { DB } from '../db/index';
 import { getSettings } from '../settings';
-import { addDaysStr, clamp, nowIso, round, todayStr } from '../util';
+import { addDaysStr, clamp, hourOfDay, nowIso, round, todayStr } from '../util';
 
 const SLOTS = ['breakfast', 'lunch', 'dinner', 'snacks'] as const;
 
@@ -181,10 +181,10 @@ export function foodLogRouter(db: DB): Router {
     const ts = nowIso();
     const info = db
       .prepare(
-        'INSERT INTO food_log (day_date,meal_slot,food_id,name,grams,kcal,protein,carb,fat,sort_order,eating_out,created_at) ' +
-          'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO food_log (day_date,meal_slot,food_id,name,grams,kcal,protein,carb,fat,sort_order,eating_out,created_at,hour_local) ' +
+          'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
       )
-      .run(date, slot, b.food_id ?? null, b.name ?? 'Food', grams, kcal, protein, carb, fat, Date.now() % 100000, eatingOut, ts);
+      .run(date, slot, b.food_id ?? null, b.name ?? 'Food', grams, kcal, protein, carb, fat, Date.now() % 100000, eatingOut, ts, hourOfDay(b.hour));
     // Remember how this food was entered (grams vs servings) and the amount, so re-adding
     // it pre-fills the same way. Bumping updated_at also floats it up the "My foods" list.
     if (b.food_id != null) {

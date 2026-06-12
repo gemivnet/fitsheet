@@ -2,17 +2,18 @@ import { Router } from 'express';
 import { buildAnalytics } from '../analytics';
 import type { DB } from '../db/index';
 import { getSettings } from '../settings';
-import { todayStr } from '../util';
+import { addDaysStr, isDayStr, todayStr } from '../util';
 import { daySummary } from './foodLog';
 
 // One call that powers the Home dashboard (avoids a fan-out of requests on launch).
+// The client sends its local calendar date — the phone's day wins over the server's.
 export function dashboardRouter(db: DB): Router {
   const r = Router();
-  r.get('/', (_req, res) => {
+  r.get('/', (req, res) => {
     const s = getSettings(db);
-    const today = todayStr();
-    const tomorrow = todayStr(new Date(Date.now() + 86_400_000));
-    const a = buildAnalytics(db, s);
+    const today = isDayStr(req.query.date) ? req.query.date : todayStr();
+    const tomorrow = addDaysStr(today, 1);
+    const a = buildAnalytics(db, s, today);
     const workout = db
       .prepare('SELECT * FROM workouts WHERE scheduled_date IN (?, ?) AND completed_at IS NULL ORDER BY scheduled_date ASC LIMIT 1')
       .get(today, tomorrow);

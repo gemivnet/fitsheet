@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { writeAudit } from '../audit';
 import type { DB } from '../db/index';
-import { nowIso, todayStr } from '../util';
+import { addDaysStr, isDayStr, nowIso, todayStr } from '../util';
 
 export function workoutsRouter(db: DB): Router {
   const r = Router();
@@ -19,12 +19,12 @@ export function workoutsRouter(db: DB): Router {
     );
   });
 
-  r.get('/today', (_req, res) => {
-    const today = todayStr();
+  r.get('/today', (req, res) => {
+    const today = isDayStr(req.query.date) ? req.query.date : todayStr();
     res.json(
       db
         .prepare('SELECT * FROM workouts WHERE scheduled_date IN (?, ?) ORDER BY scheduled_date ASC')
-        .all(today, todayStr(new Date(Date.now() + 86_400_000))),
+        .all(today, addDaysStr(today, 1)),
     );
   });
 

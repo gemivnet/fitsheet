@@ -52,15 +52,17 @@ export function foodsRouter(db: DB): Router {
       .all(slot) as { food_id: number; total: number; last_at: string; slot_count: number }[];
     const stat = new Map(stats.map((s) => [s.food_id, s]));
 
-    // Food × time-of-day correlation: how often each food is logged within ±2h of *now*
-    // (everything in UTC, so it's internally consistent and stores no timezone). This sharpens
-    // "what I usually eat around this time" beyond the coarse meal-slot signal.
-    const nowHour = new Date().getUTCHours();
+    // Food × time-of-day correlation: how often each food is logged within ±2h of *now*.
+    // The client sends its local hour (so this follows her phone when she travels); each log
+    // row stores hour_local, with older rows falling back to the server-local created_at hour.
+    const hq = Number(req.query.hour);
+    const nowHour = Number.isInteger(hq) && hq >= 0 && hq <= 23 ? hq : new Date().getHours();
+    const storedHour = "COALESCE(hour_local, CAST(strftime('%H', created_at, 'localtime') AS INTEGER))";
     const hourRows = db
       .prepare(
-        "SELECT food_id, COUNT(*) AS near FROM food_log WHERE food_id IS NOT NULL AND " +
-          "MIN((24 + CAST(strftime('%H', created_at) AS INTEGER) - ?) % 24, (24 + ? - CAST(strftime('%H', created_at) AS INTEGER)) % 24) <= 2 " +
-          "GROUP BY food_id",
+        'SELECT food_id, COUNT(*) AS near FROM food_log WHERE food_id IS NOT NULL AND ' +
+          `MIN((24 + ${storedHour} - ?) % 24, (24 + ? - ${storedHour}) % 24) <= 2 ` +
+          'GROUP BY food_id',
       )
       .all(nowHour, nowHour) as { food_id: number; near: number }[];
     const hourNear = new Map(hourRows.map((h) => [h.food_id, h.near]));

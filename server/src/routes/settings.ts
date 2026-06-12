@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { DB } from '../db/index';
 import { DEFAULT_SETTINGS, getSettings, setSettings, type Settings } from '../settings';
-import { todayStr } from '../util';
+import { isDayStr, todayStr } from '../util';
 
 export function settingsRouter(db: DB): Router {
   const r = Router();
@@ -17,15 +17,16 @@ export function settingsRouter(db: DB): Router {
   });
 
   // The single payload the app turns into on-device local notifications.
-  r.get('/reminders', (_req, res) => {
+  r.get('/reminders', (req, res) => {
     const s = getSettings(db);
     const horizon = 21;
+    const today = isDayStr(req.query.date) ? req.query.date : todayStr();
     const workouts = db
       .prepare(
         "SELECT id, title, scheduled_date, planned_minutes FROM workouts " +
           'WHERE completed_at IS NULL AND scheduled_date IS NOT NULL AND scheduled_date >= ? ORDER BY scheduled_date ASC LIMIT 40',
       )
-      .all(todayStr());
+      .all(today);
     res.json({
       weigh_in_weekday: s.weigh_in_weekday,
       weigh_in_hour: s.weigh_in_hour,
