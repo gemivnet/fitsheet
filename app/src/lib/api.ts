@@ -452,7 +452,7 @@ export const api = {
   ai: {
     extractLabel: (form: FormData) =>
       req<{ nutrition: any; label_photo: string; confidence?: string; error?: string }>('POST', '/api/ai/extract-label', form),
-    parseFood: (text: string) => req<{ items: ParsedFood[] }>('POST', '/api/ai/parse-food', { text }),
+    parseFood: (text: string, slot?: string) => req<{ items: ParsedFood[] }>('POST', '/api/ai/parse-food', { text, slot }),
     parseFoodPhoto: (form: FormData) => req<{ items: ParsedFood[]; error?: string }>('POST', '/api/ai/parse-food-photo', form),
     parseRecipe: (text: string) => req<{ recipe: ParsedRecipe | null; error?: string }>('POST', '/api/ai/parse-recipe', { text }),
     checkin: () => req<{ note: string | null }>('GET', '/api/ai/checkin'),

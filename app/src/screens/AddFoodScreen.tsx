@@ -452,7 +452,7 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
         : 'I couldn’t make that out. Try adding rough amounts — like “2 eggs and a slice of toast” — then tap Try again.',
     );
 
-  const parse = useMutation({ mutationFn: () => api.ai.parseFood(text), onSuccess: (out) => applyItems(out.items), onError: onParseError, meta: { suppressErrorToast: true } });
+  const parse = useMutation({ mutationFn: () => api.ai.parseFood(text, slot), onSuccess: (out) => applyItems(out.items), onError: onParseError, meta: { suppressErrorToast: true } });
   const parsePhoto = useMutation({ mutationFn: (form: FormData) => api.ai.parseFoodPhoto(form), onSuccess: (out) => applyItems(out.items), onError: onParseError, meta: { suppressErrorToast: true } });
 
   const pickNotes = async () => {
@@ -461,11 +461,16 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
     const a = res.assets[0];
     const form = new FormData();
     await appendImage(form, 'file', a.uri, { name: 'notes.jpg', type: a.mimeType });
+    form.append('slot', slot);
     parsePhoto.mutate(form);
   };
 
+  const [replIdx, setReplIdx] = useState<number | null>(null);
   const setGrams = (i: number, g: number) => setItems((xs) => (xs ? xs.map((it, idx) => (idx === i ? { ...it, grams: g } : it)) : xs));
   const remove = (i: number) => setItems((xs) => (xs ? xs.filter((_, idx) => idx !== i) : xs));
+  // Swap one item for the right food (e.g. "eggs" → "Egg Beaters"), keeping the amount she set.
+  const replaceItem = (i: number, p: { name: string; kcal_100g: number; protein_100g: number; carb_100g: number; fat_100g: number }) =>
+    setItems((xs) => (xs ? xs.map((it, idx) => (idx === i ? { ...it, ...p } : it)) : xs));
   const openPad = (i: number) => {
     pad.reset(String(items?.[i].grams ?? 0));
     setPadIdx(i);
@@ -524,18 +529,21 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
       ) : null}
       {items && items.length ? (
         <View style={{ marginTop: 16 }}>
-          <SectionLabel style={{ marginBottom: 8 }}>Found · tap grams to adjust</SectionLabel>
+          <SectionLabel style={{ marginBottom: 8 }}>Found · tap a name to change it, grams to adjust</SectionLabel>
           <Card pad={6}>
             {items.map((it, i) => (
               <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: i === items.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <T w={800} size={15} numberOfLines={1}>
-                    {it.name}
-                  </T>
+                <Pressable onPress={() => setReplIdx(i)} style={{ flex: 1, minWidth: 0 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <T w={800} size={15} numberOfLines={1} style={{ flexShrink: 1 }}>
+                      {it.name}
+                    </T>
+                    <Icon name="edit" size={13} color={t.text3} />
+                  </View>
                   <T num w={700} size={12} color={t.text3}>
                     {Math.round((it.kcal_100g * it.grams) / 100)} kcal
                   </T>
-                </View>
+                </Pressable>
                 <Pressable onPress={() => openPad(i)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: t.surface, borderWidth: 1.5, borderColor: t.hairline, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
                   <T num w={800} size={15}>
                     {it.grams}
@@ -600,7 +608,103 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
           Done
         </Button>
       </Sheet>
+
+      <ReplaceItemSheet
+        item={replIdx != null ? (items?.[replIdx] ?? null) : null}
+        onClose={() => setReplIdx(null)}
+        onReplace={(p) => {
+          if (replIdx != null) replaceItem(replIdx, p);
+          setReplIdx(null);
+        }}
+      />
     </View>
+  );
+}
+
+// Tap a parsed item to swap it for the right food — search her foods + Open Food Facts and pick
+// the correct one; its per-100g nutrition comes along and the amount she set is kept.
+function ReplaceItemSheet({
+  item,
+  onClose,
+  onReplace,
+}: {
+  item: NlItem | null;
+  onClose: () => void;
+  onReplace: (p: { name: string; kcal_100g: number; protein_100g: number; carb_100g: number; fat_100g: number }) => void;
+}) {
+  const t = useTheme();
+  const [text, setText] = useState('');
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    if (item) setText(item.name); // prefill with the current name so she can tweak it
+  }, [item]);
+  useEffect(() => {
+    const id = setTimeout(() => setQ(text.trim()), 350);
+    return () => clearTimeout(id);
+  }, [text]);
+
+  const searching = q.length >= 2;
+  const mine = useQuery({ queryKey: ['foods', 'all'], queryFn: () => api.foods.list() });
+  const off = useQuery({ queryKey: ['off', q], queryFn: () => api.off.search(q), enabled: searching });
+  const localMatches = useMemo(() => {
+    if (!searching || !mine.data) return [];
+    return mine.data
+      .map((f) => ({ f, score: fuzzyScore(q, `${f.name} ${f.brand ?? ''}`) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6)
+      .map((x) => x.f);
+  }, [q, mine.data, searching]);
+
+  if (!item) return null;
+  const pickFood = (f: Food) => onReplace({ name: f.name, kcal_100g: f.kcal_100g, protein_100g: f.protein_100g, carb_100g: f.carb_100g, fat_100g: f.fat_100g });
+  const pickOff = (o: OffFood) => onReplace({ name: o.brand ? `${o.name} · ${o.brand}` : o.name, kcal_100g: o.kcal_100g, protein_100g: o.protein_100g, carb_100g: o.carb_100g, fat_100g: o.fat_100g });
+
+  return (
+    <Sheet visible={!!item} onClose={onClose} title="Change this item">
+      <AutocompleteField
+        label="Find the right food"
+        value={text}
+        onChangeText={setText}
+        placeholder="e.g. Egg Beaters"
+        candidates={(mine.data ?? []).map((f) => f.name)}
+        fetchCompletion={(txt) => api.ai.complete(txt, 'food item being searched in a calorie tracker').then((r) => r.completion)}
+      />
+      {!searching ? (
+        <T w={600} size={13} color={t.text3} style={{ padding: 8 }}>
+          Search for the correct food — its calories come along, and the amount you set stays.
+        </T>
+      ) : (
+        <>
+          {localMatches.length ? (
+            <>
+              <SectionLabel style={{ marginBottom: 10 }}>Your foods</SectionLabel>
+              <Card pad={6} style={{ marginBottom: 16 }}>
+                {localMatches.map((f) => (
+                  <ResultRow key={`mine-${f.id}`} name={f.name} brand={f.brand} kcal100={f.kcal_100g} onPress={() => pickFood(f)} />
+                ))}
+              </Card>
+            </>
+          ) : null}
+          <SectionLabel style={{ marginBottom: 10 }}>Open Food Facts · per 100 g</SectionLabel>
+          {off.isLoading ? (
+            <T w={700} color={t.text3} style={{ padding: 8 }}>
+              Searching…
+            </T>
+          ) : off.data && off.data.length ? (
+            <Card pad={6}>
+              {off.data.slice(0, 12).map((r, i) => (
+                <ResultRow key={`${r.barcode}-${i}`} name={r.name} brand={r.brand} kcal100={r.kcal_100g} onPress={() => pickOff(r)} />
+              ))}
+            </Card>
+          ) : (
+            <T w={700} color={t.text3} style={{ padding: 8 }}>
+              No matches — try a different name.
+            </T>
+          )}
+        </>
+      )}
+    </Sheet>
   );
 }
 

@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import type { DB } from '../db/index';
 import { imageBlock } from './client';
 import { runTask } from './task';
+import { recentSlotFoods } from './context';
 import { ParsedFoodResultSchema } from './schemas';
 import type { ParsedFood } from './parseFood';
 
@@ -19,12 +20,14 @@ const TASK = {
     'portion. Be reasonable, not exact. Ignore anything that is not food.',
 };
 
-export async function parseFoodPhoto(db: DB, filePath: string, mediaType: string): Promise<ParsedFood[]> {
+export async function parseFoodPhoto(db: DB, filePath: string, mediaType: string, slot?: string): Promise<ParsedFood[]> {
   const base64 = readFileSync(filePath).toString('base64');
+  const recent = slot ? recentSlotFoods(db, slot) : '';
+  const hint = recent ? ` Lately at ${slot} she's logged: ${recent}. If something in the photo plausibly matches one of these, use that exact item and its brand.` : '';
   const out = await runTask(
     db,
     { ...TASK, globals: [...TASK.globals] },
-    { content: [imageBlock(base64, mediaType), { type: 'text', text: 'List the foods in this photo.' }] },
+    { content: [imageBlock(base64, mediaType), { type: 'text', text: `List the foods in this photo.${hint}` }] },
   );
   return (out?.items ?? []).filter((x) => x.grams > 0);
 }

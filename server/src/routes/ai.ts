@@ -67,8 +67,9 @@ export function aiRouter(db: DB): Router {
     if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
     const text = String(req.body?.text ?? '').trim();
     if (!text) return res.status(400).json({ error: 'text required' });
+    const slot = typeof req.body?.slot === 'string' ? req.body.slot : undefined;
     try {
-      res.json({ items: await parseFood(db, text) });
+      res.json({ items: await parseFood(db, text, slot) });
     } catch (e) {
       aiFail(res, 'parse', e);
     }
@@ -79,7 +80,7 @@ export function aiRouter(db: DB): Router {
     if (!req.file) return res.status(400).json({ error: 'file required' });
     if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
     try {
-      res.json({ items: await parseFoodPhoto(db, req.file.path, req.file.mimetype) });
+      res.json({ items: await parseFoodPhoto(db, req.file.path, req.file.mimetype, typeof req.body?.slot === 'string' ? req.body.slot : undefined) });
     } catch (e) {
       aiFail(res, 'parse', e);
     }

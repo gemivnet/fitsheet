@@ -4,6 +4,7 @@
 
 import type { DB } from '../db/index';
 import { runTask } from './task';
+import { recentSlotFoods } from './context';
 import { ParsedFoodResultSchema } from './schemas';
 
 export interface ParsedFood {
@@ -25,7 +26,9 @@ const TASK = {
     'she logs often, use that name and her usual portion. Be reasonable, not exact.',
 };
 
-export async function parseFood(db: DB, text: string): Promise<ParsedFood[]> {
-  const out = await runTask(db, { ...TASK, globals: [...TASK.globals] }, { content: `Parse this into foods: "${text}".` });
+export async function parseFood(db: DB, text: string, slot?: string): Promise<ParsedFood[]> {
+  const recent = slot ? recentSlotFoods(db, slot) : '';
+  const hint = recent ? `\n\nLately at ${slot} she's logged: ${recent}. If part of the description plausibly matches one of these, use that exact item and its brand.` : '';
+  const out = await runTask(db, { ...TASK, globals: [...TASK.globals] }, { content: `Parse this into foods: "${text}".${hint}` });
   return (out?.items ?? []).filter((x) => x.grams > 0);
 }

@@ -53,6 +53,16 @@ export function assembleContext(db: DB, flags: ContextFlag[] = [], date: string 
   return lines.filter(Boolean).join('\n');
 }
 
+/** Distinct foods she logged in a given meal slot over the last `days` days, most recent first.
+ * A strong "guess the right item/brand" hint — e.g. "eggs" at breakfast is probably her Egg Beaters. */
+export function recentSlotFoods(db: DB, slot: string, date: string = todayStr(), days = 3): string {
+  const from = addDaysStr(date, -(days - 1));
+  const rows = db
+    .prepare("SELECT name, MAX(day_date) AS last FROM food_log WHERE meal_slot = ? AND day_date BETWEEN ? AND ? AND eating_out = 0 GROUP BY LOWER(name) ORDER BY last DESC LIMIT 12")
+    .all(slot, from, date) as { name: string }[];
+  return rows.map((r) => r.name).join(', ');
+}
+
 // The last 7 days of intake vs goal + most recent weigh-ins — the raw material for spotting
 // anything unusual. Kept compact (one line per day).
 function recentDays(db: DB, date: string): string {
