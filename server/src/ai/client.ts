@@ -14,7 +14,7 @@ export const FAST_MODEL = 'claude-haiku-4-5';
 // One shared client: the SDK retries transient 429/5xx itself (maxRetries) and the timeout
 // bounds every call — a stuck connection can't hang a request forever.
 let _client: Anthropic | null = null;
-function client(): Anthropic {
+export function client(): Anthropic {
   if (!_client) _client = new Anthropic({ apiKey: config.anthropicApiKey, timeout: 60_000, maxRetries: 2 });
   return _client;
 }
