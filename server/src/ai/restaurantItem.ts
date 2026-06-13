@@ -3,6 +3,7 @@
 // each with calories/macros and an estimated portion weight, so she ticks what she actually got.
 
 import { claudeText, extractJson } from './client';
+import { stripRestaurantPrefix } from '../util';
 import { RestaurantItemSchema } from './schemas';
 
 export interface RestaurantComponent {
@@ -99,7 +100,9 @@ export const FULL_MENU_SYSTEM =
   'Use the chain\'s ACTUAL published nutrition. Give each a category — for fixed menus the item type ' +
   '(burger, chicken, sandwich, nuggets, side, drink, breakfast, dessert); for build-your-own (base, protein, ' +
   'beans, topping, salsa, cheese, side, sauce, other) — plus portion grams, calories, and protein/carb/fat ' +
-  'grams. Be reasonably complete for the popular options.';
+  'grams. Be reasonably complete for the popular options. ' +
+  'Name each item as it reads ON THE MENU, WITHOUT the restaurant or brand in front — "ShackBurger", ' +
+  '"Cheese Fries", "Baconator", NOT "Shake Shack ShackBurger" or "Wendy\'s Baconator".';
 export const fullMenuContent = (restaurant: string): string =>
   `Restaurant: ${restaurant}\n\n` +
   'Reply ONLY a JSON array, no prose: ' +
@@ -136,7 +139,10 @@ export async function restaurantItem(restaurant: string, item: string, menuNames
       'chicken, sandwich, nuggets, side, drink, breakfast, dessert). Only include this order plus what it ' +
       'standardly comes with. If a value is genuinely not published, estimate realistically. Set ' +
       '"confidence" to "published" only when you are reproducing the chain\'s real published nutrition; ' +
-      'for independent/local spots or anything you had to guess, set "confidence" to "estimated".',
+      'for independent/local spots or anything you had to guess, set "confidence" to "estimated". ' +
+      'Name the order and each component as they read ON THE MENU, WITHOUT the restaurant or brand in ' +
+      'front: the order "name" should be "ShackBurger", not "Shake Shack ShackBurger"; a component ' +
+      '"Cheese Fries", not "Shake Shack Cheese Fries". The restaurant is shown separately.',
     content:
       `Restaurant: ${restaurant}\nOrder: ${item}${menuHint}${historyHint}\n\n` +
       'Reply ONLY JSON, no prose: ' +
@@ -148,7 +154,13 @@ export async function restaurantItem(restaurant: string, item: string, menuNames
     console.warn('[ai] restaurant-item reply failed validation:', parsed.error.issues.slice(0, 3));
     return null;
   }
-  const obj: RestaurantItem = { ...parsed.data, components: cleanComponents(parsed.data.components) };
+  // belt-and-suspenders: strip any brand the model still baked into names, so saved orders
+  // and the reusable component library stay clean even if the prompt isn't obeyed.
+  const obj: RestaurantItem = {
+    ...parsed.data,
+    name: stripRestaurantPrefix(parsed.data.name, restaurant),
+    components: cleanComponents(parsed.data.components).map((c) => ({ ...c, name: stripRestaurantPrefix(c.name, restaurant) })),
+  };
   if (!obj.components.length) return null;
   return obj;
 }

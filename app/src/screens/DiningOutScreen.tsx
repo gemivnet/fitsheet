@@ -206,7 +206,21 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
     fat_100g: totals.grams > 0 ? Math.round((totals.fat / totals.grams) * 1000) / 10 : 0,
   };
   const canLog = totals.kcal > 0 && totals.grams > 0;
-  const name = () => `${rest}${orderName ? ` · ${orderName}` : ''}`;
+  // The order's item name: the AI's name when she built one, otherwise the items she ticked
+  // ("ShackBurger, Fries"), so a hand-assembled order is never logged as a bare restaurant name.
+  // The server title-cases the restaurant and de-stutters, so "shake shack" → "Shake Shack · …".
+  const itemName = () => {
+    if (orderName.trim()) return orderName.trim();
+    const picked = (menu.data ?? [])
+      .filter((c) => sel[c.id])
+      .sort((a, b) => catRank(a.category) - catRank(b.category) || a.sort_order - b.sort_order)
+      .map((c) => c.name);
+    return picked.length > 4 ? `${picked.slice(0, 4).join(', ')}…` : picked.join(', ');
+  };
+  const name = () => {
+    const item = itemName();
+    return item ? `${rest} · ${item}` : rest;
+  };
 
   const toggle = (id: number) =>
     setSel((s) => {
@@ -257,7 +271,8 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
         date,
         meal_slot: slot,
         food_id: f.id,
-        name: f.name,
+        // show "Restaurant · Item" in the diary; the server canonicalizes casing + de-stutters
+        name: f.restaurant ? `${f.restaurant} · ${f.name}` : f.name,
         grams: f.serving_g ?? f.last_grams ?? 100,
         eating_out: 1,
         kcal_100g: f.kcal_100g,

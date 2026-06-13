@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { addDaysStr, finiteNum, hourOfDay, isDayStr, titleCase, todayStr } from './util';
+import { addDaysStr, cleanDiningName, finiteNum, hourOfDay, isDayStr, stripRestaurantPrefix, titleCase, todayStr } from './util';
 
 test('addDaysStr crosses DST boundaries without skipping a day', () => {
   // US spring-forward (2026-03-08) and fall-back (2026-11-01)
@@ -50,4 +50,23 @@ test('todayStr formats a local calendar date', () => {
 test('titleCase canonicalizes restaurant names', () => {
   assert.equal(titleCase('chipotle'), 'Chipotle');
   assert.equal(titleCase('in and out'), 'In and Out');
+});
+
+test('cleanDiningName title-cases the restaurant and de-stutters the item', () => {
+  // the exact bug from the screenshot
+  assert.equal(cleanDiningName('shake shack · Shake Shack Shack Burger'), 'Shake Shack · Shack Burger');
+  // clean input is unchanged (idempotent)
+  assert.equal(cleanDiningName('Shake Shack · ShackBurger'), 'Shake Shack · ShackBurger');
+  assert.equal(cleanDiningName(cleanDiningName('shake shack · Shake Shack Shack Burger')), 'Shake Shack · Shack Burger');
+  // camelCase items survive (only the restaurant segment is title-cased)
+  assert.equal(cleanDiningName('chipotle · ShackBurger'), 'Chipotle · ShackBurger');
+  // bare names (no " · ") are left alone here so camelCase saved-orders aren't mangled;
+  // a legacy bare restaurant row is title-cased by the boot normalizer instead.
+  assert.equal(cleanDiningName('ShackBurger'), 'ShackBurger');
+});
+
+test('stripRestaurantPrefix removes a repeated brand without emptying the name', () => {
+  assert.equal(stripRestaurantPrefix('Shake Shack Shack Burger', 'Shake Shack'), 'Shack Burger');
+  assert.equal(stripRestaurantPrefix('Shake Shack', 'Shake Shack'), 'Shake Shack'); // exact match, not emptied
+  assert.equal(stripRestaurantPrefix('ShackBurger', 'Shake Shack'), 'ShackBurger'); // no prefix → untouched
 });

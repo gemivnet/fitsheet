@@ -56,3 +56,30 @@ export function titleCase(s: string): string {
     })
     .join(' ');
 }
+
+/** Drop a leading restaurant name the model sometimes repeats inside an item
+ * ("Shake Shack Shack Burger" + "Shake Shack" → "Shack Burger"). Case-insensitive;
+ * never empties the name. Item casing is preserved (keeps "ShackBurger"). */
+export function stripRestaurantPrefix(name: string, restaurant: string): string {
+  const n = (name ?? '').trim();
+  const r = (restaurant ?? '').trim();
+  if (!n || !r) return n;
+  if (n.length > r.length + 1 && n.slice(0, r.length).toLowerCase() === r.toLowerCase() && n[r.length] === ' ') {
+    return n.slice(r.length).trim();
+  }
+  return n;
+}
+
+/** Canonical display name for an "eating out" log entry. Names are stored denormalized as
+ * "Restaurant · Item": this title-cases the restaurant segment ("shake shack" → "Shake Shack")
+ * and de-stutters a brand the model baked into the item. Bare names (no " · ", e.g. a
+ * saved-order quick-log) are left untouched so camelCase items like "ShackBurger" survive.
+ * Idempotent. */
+export function cleanDiningName(name: string): string {
+  const raw = (name ?? '').trim();
+  const sep = raw.indexOf(' · ');
+  if (sep < 0) return raw;
+  const rest = titleCase(raw.slice(0, sep));
+  const item = stripRestaurantPrefix(raw.slice(sep + 3).trim(), rest);
+  return item ? `${rest} · ${item}` : rest;
+}
