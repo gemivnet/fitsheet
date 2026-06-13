@@ -25,4 +25,5 @@ export { NumberPad, NumberField, useNumberField, applyNumberKey } from './Number
 export { ReminderSync } from './ReminderSync';
 export { ToastHost, showToast, type ToastOptions } from './Toast';
 export { BankLine } from './BankLine';
+export { InfoDot, type InfoTopic } from './InfoSheet';
 export { CalorieCalculator } from './CalorieCalculator';

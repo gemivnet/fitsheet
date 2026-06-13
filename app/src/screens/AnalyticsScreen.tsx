@@ -4,7 +4,7 @@ import React, { useCallback } from 'react';
 import { Pressable, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Icon, ProgressBar, Screen, SectionLabel, T, WeightChart, type WeightPoint } from '../components';
+import { Card, Icon, InfoDot, type InfoTopic, ProgressBar, Screen, SectionLabel, T, WeightChart, type WeightPoint } from '../components';
 import { api } from '../lib/api';
 import { prettyDate, todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
@@ -69,6 +69,7 @@ export function AnalyticsScreen() {
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
             <Metric
               label="Est. maintenance"
+              topic="maintenance"
               value={d.tdee.estimate != null ? `~${d.tdee.estimate}` : '—'}
               sub={
                 d.tdee.estimate != null
@@ -80,6 +81,7 @@ export function AnalyticsScreen() {
             />
             <Metric
               label="Rate"
+              topic="rate"
               value={d.weight.lbs_per_week != null ? `${fmtWeight(Math.abs(d.weight.lbs_per_week), units)}` : '—'}
               sub={
                 d.weight.lbs_per_week != null
@@ -91,7 +93,10 @@ export function AnalyticsScreen() {
 
           {d.goal.eta_date ? (
             <Card pad={18} style={{ marginBottom: 12 }}>
-              <SectionLabel style={{ marginBottom: 8 }}>On track for your goal</SectionLabel>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <SectionLabel>On track for your goal</SectionLabel>
+                <InfoDot topic="eta" />
+              </View>
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
                 <Icon name="trend" size={18} color={t.accent} />
                 <T w={800} size={20}>
@@ -119,8 +124,8 @@ export function AnalyticsScreen() {
               value={d.adherence.avg_intake_vs_goal != null ? `${d.adherence.avg_intake_vs_goal > 0 ? '+' : ''}${d.adherence.avg_intake_vs_goal} kcal` : '—'}
               tone={d.adherence.avg_intake_vs_goal != null && d.adherence.avg_intake_vs_goal <= 0 ? 'good' : 'warn'}
             />
-            <Row label="Calorie bank" value={`${d.adherence.cumulative_deficit > 0 ? '+' : ''}${d.adherence.cumulative_deficit} kcal`} tone={d.adherence.cumulative_deficit >= 0 ? 'good' : 'warn'} />
-            <Row label="Logging streak" value={`${d.adherence.logging_streak} days 🔥`} last />
+            <Row label="Cumulative deficit" topic="deficit" value={`${d.adherence.cumulative_deficit > 0 ? '+' : ''}${d.adherence.cumulative_deficit} kcal`} tone={d.adherence.cumulative_deficit >= 0 ? 'good' : 'warn'} />
+            <Row label="Logging streak" topic="streak" value={`${d.adherence.logging_streak} days 🔥`} last />
           </Card>
 
           {dining.data && (dining.data.this_week > 0 || dining.data.last_week > 0) ? (
@@ -151,13 +156,16 @@ function etaRange(g: { eta_weeks_low: number | null; eta_weeks_high: number | nu
   return 'A rough estimate';
 }
 
-function Metric({ label, value, sub }: { label: string; value: string; sub: string }) {
+function Metric({ label, value, sub, topic }: { label: string; value: string; sub: string; topic?: InfoTopic }) {
   const t = useTheme();
   return (
     <Card pad={18} style={{ flex: 1 }}>
-      <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>
-        {label}
-      </T>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+        <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6 }}>
+          {label}
+        </T>
+        {topic ? <InfoDot topic={topic} /> : null}
+      </View>
       <T num w={800} size={28}>
         {value}
       </T>
@@ -168,14 +176,17 @@ function Metric({ label, value, sub }: { label: string; value: string; sub: stri
   );
 }
 
-function Row({ label, value, tone, last }: { label: string; value: string; tone?: 'good' | 'warn'; last?: boolean }) {
+function Row({ label, value, tone, last, topic }: { label: string; value: string; tone?: 'good' | 'warn'; last?: boolean; topic?: InfoTopic }) {
   const t = useTheme();
   const color = tone === 'good' ? t.success : tone === 'warn' ? t.caution : t.text;
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 11, borderBottomWidth: last ? 0 : 1, borderBottomColor: t.hairline }}>
-      <T w={700} size={15} color={t.text2}>
-        {label}
-      </T>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <T w={700} size={15} color={t.text2}>
+          {label}
+        </T>
+        {topic ? <InfoDot topic={topic} /> : null}
+      </View>
       <T num w={800} size={16} color={color}>
         {value}
       </T>
