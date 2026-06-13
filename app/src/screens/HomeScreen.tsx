@@ -5,7 +5,7 @@ import { Linking, Pressable, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { applyNumberKey, BankLine, Button, CalorieRing, Card, CelebrationModal, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, T } from '../components';
+import { applyNumberKey, BankLine, Button, CalorieRing, Card, CelebrationModal, type CompanionMessage, Icon, MacroBar, Marmalade, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, T } from '../components';
 import { api, type Suggestion, type SupplementToday, type UsualMeal } from '../lib/api';
 import { DAY_UNDER_GOAL, FIRST_LOG_OF_DAY, pick, WORKOUT_DONE } from '../lib/encouragement';
 import { slotForNow, todayStr } from '../lib/date';
@@ -35,6 +35,10 @@ export function HomeScreen() {
   const dToday = dash.data?.today;
   const showRecap = !!dToday && dToday.totals.kcal > 0 && ((dToday.slots?.dinner ?? []).length > 0 || !!dToday.slots_complete?.dinner || new Date().getHours() >= 19);
   const recap = useQuery({ queryKey: ['day-summary', todayStr()], queryFn: () => api.ai.daySummary(todayStr()), enabled: showRecap, staleTime: 30 * 60 * 1000 });
+
+  // Marmalade's check — she pops up only when she's noticed something worth a gentle word.
+  const anomalies = useQuery({ queryKey: ['anomalies', todayStr()], queryFn: () => api.ai.anomalies(todayStr()), enabled: !!dToday, staleTime: 60 * 60 * 1000 });
+  const companionMsgs: CompanionMessage[] = (anomalies.data?.anomalies ?? []).map((a, i) => ({ id: `${todayStr()}:${i}:${a.title}`, ...a }));
 
   useFocusEffect(useCallback(() => void dash.refetch(), [dash.refetch]));
 
@@ -336,6 +340,15 @@ export function HomeScreen() {
           />
         )
       ) : null}
+
+      <Marmalade
+        messages={companionMsgs}
+        onAct={(m) => {
+          if (m.action === 'open_day') nav.navigate('Food', { screen: 'FoodDay' });
+          else if (m.action === 'open_weight') nav.navigate('Weight', { screen: 'Weight' });
+          else if (m.action === 'open_analytics') nav.navigate('More', { screen: 'Analytics' });
+        }}
+      />
     </View>
   );
 }
