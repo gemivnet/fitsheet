@@ -9,6 +9,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
 import { applyNumberKey, Button, Card, Icon, NumberField, NumberPad, Screen, SectionLabel, T, TextField } from '../components';
 import { api } from '../lib/api';
+import { appendImage } from '../lib/upload';
 import { useTheme } from '../theme';
 import type { FoodStackParams } from '../navigation/types';
 
@@ -54,7 +55,7 @@ export function LabelCaptureScreen({ navigation, route }: Props) {
     const asset = res.assets[0];
     setPhase('busy');
     const form = new FormData();
-    form.append('file', { uri: asset.uri, name: 'label.jpg', type: asset.mimeType ?? 'image/jpeg' } as any);
+    await appendImage(form, 'file', asset.uri, { name: 'label.jpg', type: asset.mimeType });
     try {
       const out = await api.ai.extractLabel(form);
       setLabelPhoto(out.label_photo ?? null);

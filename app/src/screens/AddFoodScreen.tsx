@@ -12,6 +12,7 @@ import { BarcodeScanner } from '../components/BarcodeScanner';
 import { DiningOutTab } from './DiningOutScreen';
 import { DishBuilderTab } from './DishBuilderScreen';
 import { api, type Food, type OffFood, type Suggestion } from '../lib/api';
+import { appendImage } from '../lib/upload';
 import { FIRST_LOG_OF_DAY, pick } from '../lib/encouragement';
 import { Font, useTheme } from '../theme';
 import type { FoodStackParams } from '../navigation/types';
@@ -459,7 +460,7 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
     if (res.canceled || !res.assets?.[0]) return;
     const a = res.assets[0];
     const form = new FormData();
-    form.append('file', { uri: a.uri, name: 'notes.jpg', type: a.mimeType ?? 'image/jpeg' } as any);
+    await appendImage(form, 'file', a.uri, { name: 'notes.jpg', type: a.mimeType });
     parsePhoto.mutate(form);
   };
 

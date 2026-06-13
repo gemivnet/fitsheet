@@ -8,6 +8,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, CelebrationModal, Icon, Screen, T, TextField } from '../components';
 import { api } from '../lib/api';
+import { appendImage } from '../lib/upload';
 import { todayStr } from '../lib/date';
 import { fromDisplayWeight } from '../lib/units';
 import { useTheme } from '../theme';
@@ -41,7 +42,7 @@ export function LogWeightScreen({ navigation }: Props) {
       const out = await api.weight.log({ weight_lb: Math.round(lb * 10) / 10, note: note || undefined });
       if (photoUri) {
         const form = new FormData();
-        form.append('file', { uri: photoUri, name: 'progress.jpg', type: 'image/jpeg' } as any);
+        await appendImage(form, 'file', photoUri, { name: 'progress.jpg' });
         form.append('taken_date', todayStr());
         form.append('entry_id', String(out.entry.id));
         await api.weightPhotos.upload(form).catch(() => {});

@@ -7,6 +7,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Chip, EmptyState, Icon, Screen, SegmentedControl, Sheet, showToast, T, TextField } from '../components';
 import { api, fileUrl, type Recipe } from '../lib/api';
+import { appendImage } from '../lib/upload';
 import { confirmAction } from '../lib/dialog';
 import { slotForNow, todayStr } from '../lib/date';
 import { useTheme } from '../theme';
@@ -280,7 +281,7 @@ function RecipeForm({ visible, initial, onClose, onSaved }: { visible: boolean; 
         form.append('cook_band', band);
         if (tags) form.append('tags', tags);
         if (ingredients) form.append('ingredients', ingredients);
-        if (photoUri) form.append('photo', { uri: photoUri, name: 'recipe.jpg', type: 'image/jpeg' } as any);
+        if (photoUri) await appendImage(form, 'photo', photoUri, { name: 'recipe.jpg' });
         await api.recipes.create(form);
       }
     } catch {
