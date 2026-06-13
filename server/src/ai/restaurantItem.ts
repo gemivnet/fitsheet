@@ -2,8 +2,10 @@
 // she's getting, break it into the build-your-own components (base, protein, each topping/side),
 // each with calories/macros and an estimated portion weight, so she ticks what she actually got.
 
-import { claudeText, extractJson } from './client';
+import { claudeText } from './client';
+import type { DB } from '../db/index';
 import { stripRestaurantPrefix } from '../util';
+import { runTask } from './task';
 import { RestaurantItemSchema } from './schemas';
 
 export interface RestaurantComponent {
@@ -113,7 +115,27 @@ export async function restaurantFullMenu(restaurant: string): Promise<Restaurant
   return cleanComponents(salvageObjects(out));
 }
 
-export async function restaurantItem(restaurant: string, item: string, menuNames: string[] = [], history: string[] = []): Promise<RestaurantItem | null> {
+const ITEM_SYSTEM =
+  'You help someone log a restaurant meal using the chain\'s ACTUAL OFFICIAL PUBLISHED nutrition — ' +
+  'reproduce real published numbers, not rough guesses. Given a chain and the order, return its parts as ' +
+  '"components". HOW you split it depends on the restaurant:\n' +
+  '• BUILD-YOUR-OWN chains (Chipotle, Subway, Cava, Qdoba, bowl/sub/salad makers): break the order into ' +
+  'the individual components a person assembles — base, protein, then EACH topping/side/sauce as its own ' +
+  'line. Mark standard inclusions default_on:true and optional add-ons (guac, chips, extra cheese) false.\n' +
+  '• FIXED-MENU chains (McDonald\'s, Wendy\'s, Chick-fil-A, Taco Bell, Burger King, etc.): each "component" ' +
+  'is a WHOLE menu item the person ordered (e.g. "Big Mac", "Medium Fries") with its full nutrition — do ' +
+  'NOT break items into ingredients. Mark each item default_on:true (they ordered it).\n' +
+  'For each line give the published calories, protein/carb/fat grams, portion grams, and a category ' +
+  '(build-your-own: base, protein, beans, topping, salsa, cheese, side, sauce, other; fixed: burger, ' +
+  'chicken, sandwich, nuggets, side, drink, breakfast, dessert). Only include this order plus what it ' +
+  'standardly comes with. If a value is genuinely not published, estimate realistically. Set ' +
+  '"confidence" to "published" only when you are reproducing the chain\'s real published nutrition; ' +
+  'for independent/local spots or anything you had to guess, set "confidence" to "estimated". ' +
+  'Name the order and each component as they read ON THE MENU, WITHOUT the restaurant or brand in ' +
+  'front: the order "name" should be "ShackBurger", not "Shake Shack ShackBurger"; a component ' +
+  '"Cheese Fries", not "Shake Shack Cheese Fries". The restaurant is shown separately.';
+
+export async function restaurantItem(db: DB, restaurant: string, item: string, menuNames: string[] = [], history: string[] = []): Promise<RestaurantItem | null> {
   // Menu-aware: when the restaurant already has a component menu, reuse those EXACT names so the
   // order's parts line up with the menu instead of creating near-duplicates.
   const menuHint = menuNames.length
@@ -123,43 +145,18 @@ export async function restaurantItem(restaurant: string, item: string, menuNames
   const historyHint = history.length
     ? `\n\nThis specific person usually gets these here: ${history.join(', ')}. When the order is consistent with that, set default_on:true for those so HER usual is pre-selected.`
     : '';
-  const out = await claudeText({
-    system:
-      'You help someone log a restaurant meal using the chain\'s ACTUAL OFFICIAL PUBLISHED nutrition — ' +
-      'reproduce real published numbers, not rough guesses. Given a chain and the order, return its parts as ' +
-      '"components". HOW you split it depends on the restaurant:\n' +
-      '• BUILD-YOUR-OWN chains (Chipotle, Subway, Cava, Qdoba, bowl/sub/salad makers): break the order into ' +
-      'the individual components a person assembles — base, protein, then EACH topping/side/sauce as its own ' +
-      'line. Mark standard inclusions default_on:true and optional add-ons (guac, chips, extra cheese) false.\n' +
-      '• FIXED-MENU chains (McDonald\'s, Wendy\'s, Chick-fil-A, Taco Bell, Burger King, etc.): each "component" ' +
-      'is a WHOLE menu item the person ordered (e.g. "Big Mac", "Medium Fries") with its full nutrition — do ' +
-      'NOT break items into ingredients. Mark each item default_on:true (they ordered it).\n' +
-      'For each line give the published calories, protein/carb/fat grams, portion grams, and a category ' +
-      '(build-your-own: base, protein, beans, topping, salsa, cheese, side, sauce, other; fixed: burger, ' +
-      'chicken, sandwich, nuggets, side, drink, breakfast, dessert). Only include this order plus what it ' +
-      'standardly comes with. If a value is genuinely not published, estimate realistically. Set ' +
-      '"confidence" to "published" only when you are reproducing the chain\'s real published nutrition; ' +
-      'for independent/local spots or anything you had to guess, set "confidence" to "estimated". ' +
-      'Name the order and each component as they read ON THE MENU, WITHOUT the restaurant or brand in ' +
-      'front: the order "name" should be "ShackBurger", not "Shake Shack ShackBurger"; a component ' +
-      '"Cheese Fries", not "Shake Shack Cheese Fries". The restaurant is shown separately.',
-    content:
-      `Restaurant: ${restaurant}\nOrder: ${item}${menuHint}${historyHint}\n\n` +
-      'Reply ONLY JSON, no prose: ' +
-      '{"name": string, "components": [{"name": string, "category": string, "grams": number, "kcal": number, "protein_g": number, "carb_g": number, "fat_g": number, "default_on": boolean}], "note": string, "confidence": "published"|"estimated"}',
-    maxTokens: 1500,
-  });
-  const parsed = RestaurantItemSchema.safeParse(extractJson(out));
-  if (!parsed.success) {
-    console.warn('[ai] restaurant-item reply failed validation:', parsed.error.issues.slice(0, 3));
-    return null;
-  }
+  const parsed = await runTask(
+    db,
+    { name: 'restaurant-item', schema: RestaurantItemSchema, system: ITEM_SYSTEM, maxTokens: 1500 },
+    { content: `Restaurant: ${restaurant}\nOrder: ${item}${menuHint}${historyHint}` },
+  );
+  if (!parsed) return null;
   // belt-and-suspenders: strip any brand the model still baked into names, so saved orders
   // and the reusable component library stay clean even if the prompt isn't obeyed.
   const obj: RestaurantItem = {
-    ...parsed.data,
-    name: stripRestaurantPrefix(parsed.data.name, restaurant),
-    components: cleanComponents(parsed.data.components).map((c) => ({ ...c, name: stripRestaurantPrefix(c.name, restaurant) })),
+    ...parsed,
+    name: stripRestaurantPrefix(parsed.name, restaurant),
+    components: cleanComponents(parsed.components).map((c) => ({ ...c, name: stripRestaurantPrefix(c.name, restaurant) })),
   };
   if (!obj.components.length) return null;
   return obj;

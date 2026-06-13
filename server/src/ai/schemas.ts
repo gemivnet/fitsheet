@@ -8,16 +8,17 @@ import { z } from 'zod';
 const num = z.coerce.number();
 const numOr = (fallback: number) => z.coerce.number().catch(fallback);
 
-export const ParsedFoodArraySchema = z.array(
-  z.object({
-    name: z.string().min(1),
-    grams: num,
-    kcal: num,
-    protein_g: numOr(0),
-    carb_g: numOr(0),
-    fat_g: numOr(0),
-  }),
-);
+export const ParsedFoodSchema = z.object({
+  name: z.string().min(1),
+  grams: num,
+  kcal: num,
+  protein_g: numOr(0),
+  carb_g: numOr(0),
+  fat_g: numOr(0),
+});
+export const ParsedFoodArraySchema = z.array(ParsedFoodSchema);
+// Object root for structured outputs (the API constrains the whole reply to this shape).
+export const ParsedFoodResultSchema = z.object({ items: z.array(ParsedFoodSchema) });
 
 export const ParsedRecipeSchema = z.object({
   name: z.string().min(1).nullable().catch(null),
