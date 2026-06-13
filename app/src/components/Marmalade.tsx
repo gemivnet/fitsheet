@@ -28,32 +28,33 @@ export interface CompanionMessage {
 const C: Record<string, string> = {
   k: '#3A2A1E', // outline (dark brown)
   o: '#F2933C', // orange coat
-  d: '#D9772C', // darker stripe
-  c: '#FBE7CE', // cream chest / muzzle
+  d: '#D9772C', // darker tabby stripe
+  c: '#FBE7CE', // cream chest / muzzle / paws
   e: '#F7FCF8', // eye white
+  g: '#6BBF8A', // green iris
   b: '#2E2A26', // pupil
   n: '#E07E8B', // nose
   p: '#F4A9B6', // inner ear pink
+  w: '#E6D5BE', // whisker
 };
 const PIX = [
-  '....k......k....',
-  '...kok....kok...',
-  '...kopk..kpok...',
-  '...koopkkpook...',
-  '...kooooooook...',
-  '.kooooddddooook.',
-  '.koeboooooobeok.',
-  '.koeboooooobeok.',
-  '.koooocnncooook.',
-  '.koooccccccoook.',
+  '...kk......kk...',
+  '..kook....kook..',
+  '..kopok..kopok..',
+  '..kooookkooook..',
+  '.koododoododook.',
+  '.koeeooooooeeok.',
+  '.kogboooooobgok.',
+  'wkooooccccooookw',
+  'wkooocnnnncoookw',
   '.kooccccccccook.',
   '.kooccccccccook.',
   '.kooccccccccooo.',
-  '..koccccccccok.o',
+  '.kooccccccccooko',
   '..koccccccccok.o',
   '..koccccccccokdo',
-  '...kooooooookdo.',
-  '....kkkkkkkk..k.',
+  '...kooooooook.do',
+  '....kkkkkkkk..kk',
 ];
 
 function CatSprite({ size }: { size: number }) {
