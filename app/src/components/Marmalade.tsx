@@ -1,13 +1,19 @@
-// Marmalade.tsx — a pixel-art orange cat companion, with a nod to Clippy. She pops up in the
-// corner only when she has something to say (an anomaly Marmalade noticed), shows it in a speech
-// bubble, and offers to take you to the relevant screen. One message at a time; "Got it" dismisses.
-// The message queue is generic, so later she can voice the recap, check-ins, and milestones too.
+// Marmalade.tsx — the app's companion: a pixel-art orange cat, with a nod to Clippy. She lives in
+// the corner on every screen. When the AI notices something (an anomaly) or there's a fresh
+// check-in note, she pops a speech bubble in her voice and offers to take you to the right place.
+// Tap her any time and she'll say hello even when there's no news. She's the persona of the app.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 import Svg, { Rect } from 'react-native-svg';
 import { Icon } from './Icon';
 import { T } from './primitives';
+import { api } from '../lib/api';
+import { MARMALADE_IDLE, pick } from '../lib/encouragement';
+import { todayStr } from '../lib/date';
+import { navigate } from '../navigation/ref';
 import { useTheme } from '../theme';
 
 export interface CompanionMessage {
@@ -18,122 +24,173 @@ export interface CompanionMessage {
   action: 'none' | 'open_day' | 'open_weight' | 'open_analytics';
 }
 
-// ── the cat, as a pixel grid ──────────────────────────────────────────────────
-// Each char is one pixel: o/d orange + stripe, c cream, e eye, b pupil, n nose, p bow, . clear.
+// ── the cat, as a pixel grid (16×18 sitting orange tabby) ─────────────────────
 const C: Record<string, string> = {
+  k: '#3A2A1E', // outline (dark brown)
   o: '#F2933C', // orange coat
   d: '#D9772C', // darker stripe
-  c: '#FBE7CE', // cream muzzle / belly / paws
-  e: '#F4FBF6', // eye white
-  b: '#2E2A26', // pupil / outline
+  c: '#FBE7CE', // cream chest / muzzle
+  e: '#F7FCF8', // eye white
+  b: '#2E2A26', // pupil
   n: '#E07E8B', // nose
-  p: '#E86A86', // little bow (her flower)
+  p: '#F4A9B6', // inner ear pink
 };
-// 12 × 13 sitting cat, facing forward (every row is exactly 12 chars)
 const PIX = [
-  '..o......o..',
-  '.odo....odo.',
-  '.oooppooooo.',
-  'ooooooooooo.',
-  'ocoooooocoo.',
-  'oooddddoooo.',
-  'oeboooobeoo.',
-  'ooooonnoooo.',
-  'ocooppppcoo.',
-  '.occcccco...',
-  '.ooooooooo..',
-  '.occo.occo..',
-  '..oooooooo..',
+  '....k......k....',
+  '...kok....kok...',
+  '...kopk..kpok...',
+  '...koopkkpook...',
+  '...kooooooook...',
+  '.kooooddddooook.',
+  '.koeboooooobeok.',
+  '.koeboooooobeok.',
+  '.koooocnncooook.',
+  '.koooccccccoook.',
+  '.kooccccccccook.',
+  '.kooccccccccook.',
+  '.kooccccccccooo.',
+  '..koccccccccok.o',
+  '..koccccccccok.o',
+  '..koccccccccokdo',
+  '...kooooooookdo.',
+  '....kkkkkkkk..k.',
 ];
 
 function CatSprite({ size }: { size: number }) {
-  const cols = 12;
+  const cols = 16;
   const px = size / cols;
-  const rects: React.ReactNode[] = [];
+  const cells: React.ReactNode[] = [];
   PIX.forEach((row, y) => {
     for (let x = 0; x < row.length; x++) {
       const fill = C[row[x]];
-      if (fill) rects.push(<Rect key={`${x}-${y}`} x={x * px} y={y * px} width={px + 0.5} height={px + 0.5} fill={fill} />);
+      if (fill) cells.push(<Rect key={`${x}-${y}`} x={x * px} y={y * px} width={px + 0.6} height={px + 0.6} fill={fill} />);
     }
   });
   return (
     <Svg width={size} height={(size / cols) * PIX.length}>
-      {rects}
+      {cells}
     </Svg>
   );
 }
 
-export function Marmalade({ messages, onAct }: { messages: CompanionMessage[]; onAct: (m: CompanionMessage) => void }) {
+// Build her prioritized queue from the AI surfaces: heads-up anomalies, then fyi, then the note.
+function useCompanionMessages(): CompanionMessage[] {
+  const today = todayStr();
+  const anomalies = useQuery({ queryKey: ['anomalies', today], queryFn: () => api.ai.anomalies(today), staleTime: 60 * 60 * 1000 });
+  const checkin = useQuery({ queryKey: ['checkin'], queryFn: api.ai.checkin, staleTime: 60 * 60 * 1000 });
+
+  const msgs: CompanionMessage[] = [];
+  for (const [i, a] of (anomalies.data?.anomalies ?? []).entries()) {
+    msgs.push({ id: `anom:${today}:${i}:${a.title}`, title: a.title, message: a.message, severity: a.severity, action: a.action });
+  }
+  msgs.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'heads_up' ? -1 : 1));
+  if (checkin.data?.note) {
+    msgs.push({ id: `checkin:${checkin.data.note.slice(0, 24)}`, title: 'A little note', message: checkin.data.note, severity: 'fyi', action: 'open_analytics' });
+  }
+  return msgs;
+}
+
+const act = (action: CompanionMessage['action']) => {
+  if (action === 'open_day') navigate('Food', { screen: 'FoodDay' });
+  else if (action === 'open_weight') navigate('Weight', { screen: 'Weight' });
+  else if (action === 'open_analytics') navigate('More', { screen: 'Analytics' });
+};
+
+export function Companion() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
+  const messages = useCompanionMessages();
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(true);
+  const [idleLine, setIdleLine] = useState<string | null>(null);
+
   const pending = messages.filter((m) => !dismissed.has(m.id));
   const current = pending[0] ?? null;
+  const hasNews = !!current;
 
-  // slide + gentle bob when she has something to say
-  const v = useRef(new Animated.Value(0)).current;
   const bob = useRef(new Animated.Value(0)).current;
+  const enter = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.timing(v, { toValue: current ? 1 : 0, duration: 320, easing: Easing.out(Easing.back(1.5)), useNativeDriver: true }).start();
-    if (current) {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(bob, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-          Animated.timing(bob, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        ]),
-      );
-      loop.start();
-      return () => loop.stop();
+    Animated.timing(enter, { toValue: 1, duration: 360, easing: Easing.out(Easing.back(1.4)), useNativeDriver: true }).start();
+  }, [enter]);
+  useEffect(() => {
+    if (!hasNews) {
+      bob.stopAnimation();
+      bob.setValue(0);
+      return;
     }
-  }, [current, v, bob]);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bob, { toValue: 1, duration: 850, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(bob, { toValue: 0, duration: 850, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [hasNews, bob]);
 
-  if (!current) return null;
-  const dismiss = () => setDismissed((s) => new Set(s).add(current.id));
+  // a fresh news item should pop open the bubble
+  useEffect(() => {
+    if (current) {
+      setOpen(true);
+      setIdleLine(null);
+    }
+  }, [current?.id]);
+
+  const dismiss = () => current && setDismissed((s) => new Set(s).add(current.id));
+  const onTapCat = () => {
+    if (hasNews) setOpen((o) => !o);
+    else setIdleLine((l) => (l ? null : pick(MARMALADE_IDLE)));
+  };
+
+  // what the bubble shows: a real message, or a tapped idle line
+  const bubble = current
+    ? { title: current.title, message: current.message, heads: current.severity === 'heads_up', action: current.action }
+    : idleLine
+      ? { title: 'Marmalade', message: idleLine, heads: false, action: 'none' as const }
+      : null;
+
   const translateY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -5] });
-  const enter = { opacity: v, transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }] };
-
   return (
-    <View pointerEvents="box-none" style={{ position: 'absolute', right: 14, bottom: 18, alignItems: 'flex-end' }}>
-      <Animated.View style={enter}>
-        {open ? (
-          <View style={[{ maxWidth: 270, backgroundColor: t.surface, borderRadius: 18, padding: 14, marginBottom: 6, borderWidth: 1, borderColor: t.hairline }, t.shadowSm]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <T w={800} size={13} color={current.severity === 'heads_up' ? t.caution : t.accentPress}>
-                {current.title}
-              </T>
-              <Pressable onPress={dismiss} hitSlop={10} style={{ marginLeft: 'auto' }}>
-                <Icon name="more" size={16} color={t.text3} />
-              </Pressable>
-            </View>
-            <T w={600} size={14} color={t.text2} style={{ lineHeight: 20 }}>
-              {current.message}
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: 14, bottom: insets.bottom + 64, alignItems: 'flex-start' }}>
+      {bubble && (open || !current) ? (
+        <View style={[{ maxWidth: 264, backgroundColor: t.surface, borderRadius: 18, padding: 14, marginBottom: 6, borderWidth: 1, borderColor: t.hairline }, t.shadowSm]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <T w={800} size={13} color={bubble.heads ? t.caution : t.accentPress}>
+              {bubble.title}
             </T>
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-              {current.action !== 'none' ? (
-                <Pressable
-                  onPress={() => {
-                    onAct(current);
-                    dismiss();
-                  }}
-                  style={{ paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.accent }}
-                >
-                  <T w={800} size={13} color="#fff">
-                    Show me
-                  </T>
-                </Pressable>
-              ) : null}
-              <Pressable onPress={dismiss} style={{ paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.hairline }}>
-                <T w={800} size={13} color={t.text2}>
-                  {pending.length > 1 ? 'Next' : 'Got it'}
+          </View>
+          <T w={600} size={14} color={t.text2} style={{ lineHeight: 20 }}>
+            {bubble.message}
+          </T>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+            {current && current.action !== 'none' ? (
+              <Pressable
+                onPress={() => {
+                  act(current.action);
+                  dismiss();
+                }}
+                style={{ paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.accent }}
+              >
+                <T w={800} size={13} color="#fff">
+                  Show me
                 </T>
               </Pressable>
-            </View>
+            ) : null}
+            <Pressable
+              onPress={() => (current ? dismiss() : setIdleLine(null))}
+              style={{ paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.hairline }}
+            >
+              <T w={800} size={13} color={t.text2}>
+                {current && pending.length > 1 ? 'Next' : 'Got it'}
+              </T>
+            </Pressable>
           </View>
-        ) : null}
-      </Animated.View>
-      <Animated.View style={{ transform: [{ translateY }], opacity: v }}>
-        <Pressable onPress={() => setOpen((o) => !o)} hitSlop={8} accessibilityLabel="Marmalade the cat">
-          <CatSprite size={62} />
+        </View>
+      ) : null}
+      <Animated.View style={{ transform: [{ translateY }], opacity: enter, marginLeft: 4 }}>
+        <Pressable onPress={onTapCat} hitSlop={8} accessibilityLabel="Marmalade the cat">
+          <CatSprite size={58} />
         </Pressable>
       </Animated.View>
     </View>

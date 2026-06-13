@@ -19,8 +19,9 @@ import {
 } from '@expo-google-fonts/nunito';
 import { ThemeProvider, useTheme } from './src/theme';
 import { RootTabs } from './src/navigation/RootTabs';
-import { ReminderSync, T, ToastHost } from './src/components';
+import { Companion, ReminderSync, T, ToastHost } from './src/components';
 import { OnboardingScreen } from './src/screens';
+import { navigationRef } from './src/navigation/ref';
 import { api } from './src/lib/api';
 import { queryClient } from './src/lib/query';
 
@@ -94,8 +95,9 @@ function Gate() {
   if (!settings.data.onboarded) return <OnboardingScreen />;
 
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer theme={navTheme} ref={navigationRef}>
       <RootTabs />
+      <Companion />
     </NavigationContainer>
   );
 }
