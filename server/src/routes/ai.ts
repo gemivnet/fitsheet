@@ -8,11 +8,12 @@ import { restaurantHistory } from '../ai/personalContext';
 import { claudeStream } from '../ai/client';
 import { complete } from '../ai/complete';
 import { generateDayInsights } from '../ai/dayInsights';
+import { type Anomaly, generateAnomalies } from '../ai/anomalies';
 import { cleanComponents, FULL_MENU_SYSTEM, fullMenuContent, restaurantFullMenu, restaurantItem, salvageObjects } from '../ai/restaurantItem';
 import { hasAnthropicKey } from '../config';
 import type { DB } from '../db/index';
 import { upload } from '../upload';
-import { nowIso, titleCase, todayStr } from '../util';
+import { isDayStr, nowIso, titleCase, todayStr } from '../util';
 
 const NO_KEY = { error: 'no_api_key' };
 
@@ -110,6 +111,39 @@ export function aiRouter(db: DB): Router {
       res.json({ note });
     } catch {
       res.json({ note: cached?.date === date ? cached.note : null });
+    }
+  });
+
+  // ── Marmalade's anomaly check (cached; regenerates only when new food/weight data lands) ──
+  r.get('/anomalies', async (req, res) => {
+    const date = isDayStr(req.query.date) ? req.query.date : todayStr();
+    const loggedDays = (db.prepare('SELECT COUNT(DISTINCT day_date) AS n FROM food_log').get() as { n: number }).n;
+    const weighIns = (db.prepare('SELECT COUNT(*) AS n FROM weight_entries').get() as { n: number }).n;
+    if (loggedDays < 3 && weighIns < 2) return res.json({ anomalies: [] }); // not enough to notice anything yet
+    // fingerprint = newest food + weight rows + the day, so we regenerate exactly when data changes
+    const maxFood = (db.prepare('SELECT MAX(id) AS m FROM food_log').get() as { m: number | null }).m ?? 0;
+    const maxWeight = (db.prepare('SELECT MAX(id) AS m FROM weight_entries').get() as { m: number | null }).m ?? 0;
+    const fingerprint = `${maxFood}:${maxWeight}:${date}`;
+    const row = db.prepare("SELECT value_json FROM settings WHERE key = 'anomalies'").get() as { value_json: string } | undefined;
+    let cached: { fingerprint: string; anomalies: Anomaly[] } | null = null;
+    if (row) {
+      try {
+        cached = JSON.parse(row.value_json);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (cached && cached.fingerprint === fingerprint) return res.json({ anomalies: cached.anomalies });
+    if (!hasAnthropicKey()) return res.json({ anomalies: cached?.anomalies ?? [] });
+    try {
+      const anomalies = await generateAnomalies(db, date);
+      db.prepare(
+        "INSERT INTO settings (key,value_json,updated_at) VALUES ('anomalies',?,?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+      ).run(JSON.stringify({ fingerprint, anomalies }), nowIso());
+      res.json({ anomalies });
+    } catch (e) {
+      console.warn('[ai] anomalies failed:', e);
+      res.json({ anomalies: cached?.anomalies ?? [] });
     }
   });
 

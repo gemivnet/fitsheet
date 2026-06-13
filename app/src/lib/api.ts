@@ -212,6 +212,13 @@ export interface ParsedRecipe {
   ingredients: string | null;
   steps: string | null;
 }
+export interface Anomaly {
+  severity: 'fyi' | 'heads_up';
+  title: string;
+  message: string;
+  action: 'none' | 'open_day' | 'open_weight' | 'open_analytics';
+}
+
 export interface MealPlan {
   days: { label: string; meals: { slot: string; name: string; kcal: number }[]; total: number }[];
 }
@@ -450,6 +457,7 @@ export const api = {
     parseRecipe: (text: string) => req<{ recipe: ParsedRecipe | null; error?: string }>('POST', '/api/ai/parse-recipe', { text }),
     checkin: () => req<{ note: string | null }>('GET', '/api/ai/checkin'),
     daySummary: (date: string) => req<{ note: string | null }>('GET', `/api/ai/day-summary?date=${date}`),
+    anomalies: (date: string) => req<{ anomalies: Anomaly[] }>('GET', `/api/ai/anomalies?date=${date}`),
     refreshCheckin: () => req<{ note: string | null }>('POST', '/api/ai/checkin/refresh'),
     mealPlan: (days: number) => req<{ plan: MealPlan | null }>('POST', '/api/ai/meal-plan', { days }),
     restaurantItem: (restaurant: string, item: string) => req<{ item: RestaurantItem | null; cached?: boolean; error?: string }>('POST', '/api/ai/restaurant-item', { restaurant, item }),
