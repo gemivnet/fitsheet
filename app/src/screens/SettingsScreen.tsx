@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, Switch, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, CalorieCalculator, Card, Icon, Screen, SectionLabel, SegmentedControl, T, TextField } from '../components';
+import { Button, CalorieCalculator, Card, Icon, Screen, SectionLabel, SegmentedControl, showToast, T, TextField } from '../components';
 import { api, type Settings } from '../lib/api';
 import { confirmAction, notify } from '../lib/dialog';
 import { fromDisplayWeight, toDisplayWeight, type Units } from '../lib/units';
@@ -156,7 +156,7 @@ export function SettingsScreen() {
               Roll over calories (weekly bank)
             </T>
             <T w={600} size={12} color={t.text3}>
-              Under one day adds to the next; over trims it.
+              Eat under your goal and the spare calories roll into the rest of the week (up to ±800 a day); going over trims the next days a little. Tap Snooze on the ring to pause it for a day.
             </T>
           </View>
           <Switch value={banking} onValueChange={setBanking} trackColor={{ true: t.accent }} />
@@ -203,7 +203,16 @@ export function SettingsScreen() {
         </Button>
       </Card>
 
-      <CalorieCalculator visible={calcOpen} onClose={() => setCalcOpen(false)} units={units} currentWeight={start} onUse={(g) => setGoal(String(g))} />
+      <CalorieCalculator
+        visible={calcOpen}
+        onClose={() => setCalcOpen(false)}
+        units={units}
+        currentWeight={start}
+        onUse={(g) => {
+          setGoal(String(g));
+          showToast('Goal filled in — tap Save settings to keep it');
+        }}
+      />
       <View style={{ height: 20 }} />
     </Screen>
   );

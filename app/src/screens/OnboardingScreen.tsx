@@ -4,10 +4,17 @@
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, CalorieCalculator, Card, Icon, Screen, SectionLabel, SegmentedControl, T, TextField } from '../components';
+import { Button, CalorieCalculator, Card, Icon, Screen, SectionLabel, SegmentedControl, showToast, T, TextField } from '../components';
 import { api } from '../lib/api';
-import { fromDisplayWeight, type Units } from '../lib/units';
+import { fromDisplayWeight, toDisplayWeight, type Units } from '../lib/units';
 import { useTheme } from '../theme';
+
+// Re-express a typed weight in new units (so switching lb↔kg doesn't leave "180" meaning kg).
+const convert = (val: string, from: Units, to: Units): string => {
+  const n = Number(val);
+  if (!val.trim() || !Number.isFinite(n)) return val;
+  return String(Math.round(toDisplayWeight(fromDisplayWeight(n, from), to) * 10) / 10);
+};
 
 export function OnboardingScreen() {
   const t = useTheme();
@@ -64,7 +71,17 @@ export function OnboardingScreen() {
           Units
         </T>
         <View style={{ marginBottom: 4 }}>
-          <SegmentedControl options={['lb', 'kg']} value={units} onChange={(o) => setUnits(o as Units)} />
+          <SegmentedControl
+            options={['lb', 'kg']}
+            value={units}
+            onChange={(o) => {
+              const next = o as Units;
+              if (next === units) return;
+              setCurrent((c) => convert(c, units, next));
+              setTarget((tg) => convert(tg, units, next));
+              setUnits(next);
+            }}
+          />
         </View>
       </Card>
 
@@ -102,7 +119,16 @@ export function OnboardingScreen() {
         </Pressable>
       </View>
 
-      <CalorieCalculator visible={calcOpen} onClose={() => setCalcOpen(false)} units={units} currentWeight={current} onUse={(g) => setGoal(String(g))} />
+      <CalorieCalculator
+        visible={calcOpen}
+        onClose={() => setCalcOpen(false)}
+        units={units}
+        currentWeight={current}
+        onUse={(g) => {
+          setGoal(String(g));
+          showToast('Goal set — finish up and Start tracking');
+        }}
+      />
     </Screen>
   );
 }
