@@ -5,12 +5,14 @@ import { Image, Pressable, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, EmptyState, Icon, Screen, SegmentedControl, Sheet, T, TextField } from '../components';
+import { Button, Card, Chip, EmptyState, Icon, Screen, SegmentedControl, Sheet, showToast, T, TextField } from '../components';
 import { api, fileUrl, type Recipe } from '../lib/api';
 import { confirmAction } from '../lib/dialog';
+import { slotForNow, todayStr } from '../lib/date';
 import { useTheme } from '../theme';
 
 const BANDS: Record<string, string> = { under_30: '< 30 min', '30_60': '30–60 min', over_60: '1 hr+' };
+const BAND_KEYS = ['under_30', '30_60', 'over_60'];
 
 export function RecipesScreen() {
   const t = useTheme();
@@ -19,6 +21,7 @@ export function RecipesScreen() {
   const recipes = useQuery({ queryKey: ['recipes'], queryFn: () => api.recipes.list() });
   useFocusEffect(useCallback(() => void recipes.refetch(), [recipes.refetch]));
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Recipe | null>(null);
   const remove = useMutation({ mutationFn: (id: number) => api.recipes.remove(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['recipes'] }) });
   const fav = useMutation({ mutationFn: (id: number) => api.recipes.favorite(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['recipes'] }) });
 
@@ -46,6 +49,7 @@ export function RecipesScreen() {
           {recipes.data.map((r) => (
             <Pressable
               key={r.id}
+              onPress={() => setEditing(r)}
               onLongPress={() => confirmAction('Delete recipe?', r.name, () => remove.mutate(r.id), { confirmText: 'Delete', destructive: true })}
               delayLongPress={300}
               style={{ width: '48%' }}
@@ -112,12 +116,104 @@ export function RecipesScreen() {
       </View>
 
       <RecipeForm visible={open} onClose={() => setOpen(false)} onSaved={() => qc.invalidateQueries({ queryKey: ['recipes'] })} />
+      <RecipeDetailSheet
+        recipe={editing}
+        onClose={() => setEditing(null)}
+        onChanged={() => qc.invalidateQueries({ queryKey: ['recipes'] })}
+        onDelete={(r) => confirmAction('Delete recipe?', r.name, () => { remove.mutate(r.id); setEditing(null); }, { confirmText: 'Delete', destructive: true })}
+      />
     </Screen>
   );
 }
 
-function RecipeForm({ visible, onClose, onSaved }: { visible: boolean; onClose: () => void; onSaved: () => void }) {
+// Tap a recipe → see/edit it, log it to today, or delete it.
+function RecipeDetailSheet({ recipe, onClose, onChanged, onDelete }: { recipe: Recipe | null; onClose: () => void; onChanged: () => void; onDelete: (r: Recipe) => void }) {
   const t = useTheme();
+  const [edit, setEdit] = useState(false);
+  React.useEffect(() => {
+    if (recipe) setEdit(false);
+  }, [recipe]);
+  if (!recipe) return null;
+
+  const logIt = async () => {
+    try {
+      await api.foodLog.add({
+        date: todayStr(),
+        meal_slot: slotForNow(),
+        name: recipe.name,
+        grams: 100,
+        kcal_100g: recipe.approx_kcal ?? 0,
+        protein_100g: 0,
+        carb_100g: 0,
+        fat_100g: 0,
+      });
+      showToast(`${recipe.name} logged for today`);
+      onClose();
+    } catch {
+      showToast('Couldn’t log that — try again', { kind: 'error' });
+    }
+  };
+
+  if (edit) return <RecipeForm visible initial={recipe} onClose={() => setEdit(false)} onSaved={onChanged} />;
+
+  let tags: string[] = [];
+  try {
+    tags = JSON.parse(recipe.tags_json);
+  } catch {
+    /* none */
+  }
+  return (
+    <Sheet visible={!!recipe} onClose={onClose} title={recipe.name}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+        {recipe.approx_kcal ? (
+          <View style={{ backgroundColor: t.accentSoft, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999 }}>
+            <T num w={800} size={13} color={t.accentPress}>
+              ~{recipe.approx_kcal} kcal
+            </T>
+          </View>
+        ) : null}
+        {recipe.cook_band ? (
+          <T w={700} size={13} color={t.text3}>
+            {BANDS[recipe.cook_band] ?? recipe.cook_band}
+          </T>
+        ) : null}
+        {tags.map((tag) => (
+          <View key={tag} style={{ backgroundColor: t.surface2, paddingVertical: 4, paddingHorizontal: 9, borderRadius: 999 }}>
+            <T w={700} size={12} color={t.text2}>
+              {tag}
+            </T>
+          </View>
+        ))}
+      </View>
+      {recipe.ingredients ? (
+        <T w={600} size={14} color={t.text2} style={{ lineHeight: 21, marginBottom: 16 }}>
+          {recipe.ingredients}
+        </T>
+      ) : null}
+      {recipe.approx_kcal ? (
+        <Button full size="lg" icon="plus" onPress={logIt}>
+          Log it to {slotForNow()}
+        </Button>
+      ) : null}
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Button variant="soft" icon="edit" full onPress={() => setEdit(true)}>
+            Edit
+          </Button>
+        </View>
+      </View>
+      <Pressable onPress={() => onDelete(recipe)} style={{ alignItems: 'center', paddingVertical: 14 }}>
+        <T w={800} size={15} color={t.caution}>
+          Delete recipe
+        </T>
+      </Pressable>
+    </Sheet>
+  );
+}
+
+function RecipeForm({ visible, initial, onClose, onSaved }: { visible: boolean; initial?: Recipe; onClose: () => void; onSaved: () => void }) {
+  const t = useTheme();
+  const editMode = !!initial;
   const [name, setName] = useState('');
   const [kcal, setKcal] = useState('');
   const [band, setBand] = useState('under_30');
@@ -126,6 +222,20 @@ function RecipeForm({ visible, onClose, onSaved }: { visible: boolean; onClose: 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [paste, setPaste] = useState('');
   const [parsing, setParsing] = useState(false);
+
+  // seed from the recipe being edited each time the sheet opens
+  React.useEffect(() => {
+    if (!visible || !initial) return;
+    setName(initial.name);
+    setKcal(initial.approx_kcal != null ? String(initial.approx_kcal) : '');
+    setBand(initial.cook_band ?? 'under_30');
+    setIngredients(initial.ingredients ?? '');
+    try {
+      setTags((JSON.parse(initial.tags_json) as string[]).join(', '));
+    } catch {
+      setTags('');
+    }
+  }, [visible, initial]);
 
   async function autofill() {
     if (!paste.trim()) return;
@@ -154,14 +264,29 @@ function RecipeForm({ visible, onClose, onSaved }: { visible: boolean; onClose: 
 
   const save = async () => {
     if (!name.trim()) return;
-    const form = new FormData();
-    form.append('name', name.trim());
-    if (kcal) form.append('approx_kcal', kcal);
-    form.append('cook_band', band);
-    if (tags) form.append('tags', tags);
-    if (ingredients) form.append('ingredients', ingredients);
-    if (photoUri) form.append('photo', { uri: photoUri, name: 'recipe.jpg', type: 'image/jpeg' } as any);
-    await api.recipes.create(form);
+    try {
+      if (editMode) {
+        await api.recipes.update(initial.id, {
+          name: name.trim(),
+          approx_kcal: kcal ? Number(kcal) : null,
+          cook_band: band,
+          tags,
+          ingredients: ingredients || null,
+        });
+      } else {
+        const form = new FormData();
+        form.append('name', name.trim());
+        if (kcal) form.append('approx_kcal', kcal);
+        form.append('cook_band', band);
+        if (tags) form.append('tags', tags);
+        if (ingredients) form.append('ingredients', ingredients);
+        if (photoUri) form.append('photo', { uri: photoUri, name: 'recipe.jpg', type: 'image/jpeg' } as any);
+        await api.recipes.create(form);
+      }
+    } catch {
+      showToast('Couldn’t save the recipe — try again', { kind: 'error' });
+      return;
+    }
     setName('');
     setKcal('');
     setTags('');
@@ -172,31 +297,39 @@ function RecipeForm({ visible, onClose, onSaved }: { visible: boolean; onClose: 
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} title="Add recipe">
-      <TextField label="Paste a recipe (optional)" value={paste} onChangeText={setPaste} placeholder="Paste ingredients & steps, then auto-fill" multiline />
-      <View style={{ marginBottom: 18 }}>
-        <Button variant="soft" icon="star" full onPress={autofill}>
-          {parsing ? 'Reading…' : 'Auto-fill with AI'}
-        </Button>
-      </View>
-      <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Turkey chili" autoFocus />
+    <Sheet visible={visible} onClose={onClose} title={editMode ? 'Edit recipe' : 'Add recipe'}>
+      {!editMode ? (
+        <>
+          <TextField label="Paste a recipe (optional)" value={paste} onChangeText={setPaste} placeholder="Paste ingredients & steps, then auto-fill" multiline />
+          <View style={{ marginBottom: 18 }}>
+            <Button variant="soft" icon="star" full onPress={autofill}>
+              {parsing ? 'Reading…' : 'Auto-fill with AI'}
+            </Button>
+          </View>
+        </>
+      ) : null}
+      <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Turkey chili" autoFocus={!editMode} />
       <TextField label="Approx calories" value={kcal} onChangeText={setKcal} keyboardType="numeric" suffix="kcal" />
       <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
         Cook time
       </T>
       <View style={{ marginBottom: 14 }}>
-        <SegmentedControl options={['under_30', '30_60', 'over_60']} value={band} onChange={setBand} />
+        <SegmentedControl options={BAND_KEYS} value={band} onChange={setBand} labels={BANDS} />
       </View>
       <TextField label="Tags (comma separated)" value={tags} onChangeText={setTags} placeholder="low-cal, high-protein" />
       <TextField label="Ingredients / notes" value={ingredients} onChangeText={setIngredients} placeholder="What's in it…" multiline />
-      <Pressable onPress={pickPhoto} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: t.hairline, marginBottom: 16 }}>
-        {photoUri ? <Image source={{ uri: photoUri }} style={{ width: 48, height: 48, borderRadius: 10 }} /> : <Icon name="camera" size={22} color={t.accentPress} />}
-        <T w={800} size={15} color={t.text2}>
-          {photoUri ? 'Photo added' : 'Add a photo (optional)'}
-        </T>
-      </Pressable>
+      {!editMode ? (
+        <Pressable onPress={pickPhoto} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: t.hairline, marginBottom: 16 }}>
+          {photoUri ? <Image source={{ uri: photoUri }} style={{ width: 48, height: 48, borderRadius: 10 }} /> : <Icon name="camera" size={22} color={t.accentPress} />}
+          <T w={800} size={15} color={t.text2}>
+            {photoUri ? 'Photo added' : 'Add a photo (optional)'}
+          </T>
+        </Pressable>
+      ) : (
+        <View style={{ marginBottom: 16 }} />
+      )}
       <Button full size="lg" icon="check" onPress={save}>
-        Save recipe
+        {editMode ? 'Save changes' : 'Save recipe'}
       </Button>
     </Sheet>
   );

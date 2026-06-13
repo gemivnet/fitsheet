@@ -418,6 +418,8 @@ export const api = {
     },
     get: (id: number) => req<Recipe>('GET', `/api/recipes/${id}`),
     create: (form: FormData) => req<Recipe>('POST', '/api/recipes', form),
+    update: (id: number, p: { name?: string; approx_kcal?: number | null; cook_band?: string | null; ingredients?: string | null; steps?: string | null; tags?: string }) =>
+      req<Recipe>('PATCH', `/api/recipes/${id}`, p),
     favorite: (id: number) => req<Recipe>('POST', `/api/recipes/${id}/favorite`),
     remove: (id: number) => req('DELETE', `/api/recipes/${id}`),
   },

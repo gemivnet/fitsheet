@@ -186,10 +186,13 @@ export function SegmentedControl({
   options,
   value,
   onChange,
+  labels,
 }: {
   options: string[];
   value: string;
   onChange?: (o: string) => void;
+  /** Optional human-readable text per option value (the value stays the key). */
+  labels?: Record<string, string>;
 }) {
   const t = useTheme();
   return (
@@ -215,7 +218,7 @@ export function SegmentedControl({
               on ? t.shadowSm : null,
             ]}
           >
-            <Text style={{ fontFamily: Font[800], fontSize: 15, color: on ? t.text : t.text3 }}>{o}</Text>
+            <Text style={{ fontFamily: Font[800], fontSize: 15, color: on ? t.text : t.text3 }}>{labels?.[o] ?? o}</Text>
           </Pressable>
         );
       })}
