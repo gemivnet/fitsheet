@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ExtractedNutritionSchema, ParsedFoodArraySchema, ParsedRecipeSchema, RestaurantItemSchema } from './schemas';
+import { AnomalyResultSchema } from './anomalies';
 
 test('parsed foods coerce string numbers and default missing macros', () => {
   const r = ParsedFoodArraySchema.safeParse([{ name: 'Rice', grams: '120', kcal: '156', fat_g: 'huh' }]);
@@ -28,6 +29,18 @@ test('nutrition label: unreadable confidence falls back to low', () => {
   assert.equal(r.data.confidence, 'low');
   assert.equal(r.data.serving_g, 30);
   assert.equal(r.data.per_serving?.protein_g, 0);
+});
+
+test('anomaly result validates severity/action and tolerates an empty list', () => {
+  const ok = AnomalyResultSchema.safeParse({ anomalies: [{ severity: 'fyi', title: 'Nice streak', message: 'Six days running!', action: 'open_analytics' }] });
+  assert.ok(ok.success);
+  assert.equal(ok.data.anomalies[0].action, 'open_analytics');
+  // empty list is valid (the common, healthy case)
+  assert.ok(AnomalyResultSchema.safeParse({ anomalies: [] }).success);
+  // an unknown action falls back to 'none' rather than failing
+  const odd = AnomalyResultSchema.safeParse({ anomalies: [{ severity: 'heads_up', title: 'x', message: 'y', action: 'open_space' }] });
+  assert.ok(odd.success);
+  assert.equal(odd.data.anomalies[0].action, 'none');
 });
 
 test('restaurant item keeps components and defaults confidence to estimated', () => {
