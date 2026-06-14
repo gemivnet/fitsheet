@@ -93,3 +93,8 @@ export function imageBlock(base64: string, mediaType: string): Anthropic.ImageBl
   if (mt !== mediaType) console.warn(`[ai] unsupported image type ${mediaType}, sending as jpeg`);
   return { type: 'image', source: { type: 'base64', media_type: mt, data: base64 } };
 }
+
+/** Build a base64 PDF document block (Claude reads PDFs natively). */
+export function documentBlock(base64: string): Anthropic.DocumentBlockParam {
+  return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } };
+}

@@ -5,7 +5,7 @@ import { getWeeklyGoals, saveWeeklyGoals, suggestWeeklyGoals } from '../ai/weekl
 import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
 import { parseFoodPhoto } from '../ai/parseFoodPhoto';
-import { parseRecipe } from '../ai/parseRecipe';
+import { parseRecipe, parseRecipeFromUrl, parseRecipePdf } from '../ai/parseRecipe';
 import { restaurantHistory } from '../ai/personalContext';
 import { claudeStream } from '../ai/client';
 import { complete } from '../ai/complete';
@@ -185,13 +185,25 @@ export function aiRouter(db: DB): Router {
     }
   });
 
-  // ── recipe importer ──────────────────────────────────────────────────────
+  // ── recipe importer (paste text OR a web link) ────────────────────────────
   r.post('/parse-recipe', async (req, res) => {
     if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
     const text = String(req.body?.text ?? '').trim();
-    if (!text) return res.status(400).json({ error: 'text required' });
+    const url = String(req.body?.url ?? '').trim();
+    if (!text && !url) return res.status(400).json({ error: 'text or url required' });
     try {
-      res.json({ recipe: await parseRecipe(db, text) });
+      res.json({ recipe: url ? await parseRecipeFromUrl(db, url) : await parseRecipe(db, text) });
+    } catch (e) {
+      aiFail(res, 'parse', e);
+    }
+  });
+
+  // ── recipe importer (PDF upload) ──────────────────────────────────────────
+  r.post('/parse-recipe-pdf', upload.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'file required' });
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    try {
+      res.json({ recipe: await parseRecipePdf(db, req.file.path) });
     } catch (e) {
       aiFail(res, 'parse', e);
     }

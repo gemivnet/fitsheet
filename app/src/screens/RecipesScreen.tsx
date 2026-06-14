@@ -3,6 +3,7 @@
 import React, { useCallback, useState } from 'react';
 import { Image, Pressable, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Chip, EmptyState, Icon, Screen, SegmentedControl, Sheet, showToast, T, TextField } from '../components';
@@ -222,6 +223,8 @@ function RecipeForm({ visible, initial, onClose, onSaved }: { visible: boolean; 
   const [ingredients, setIngredients] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [paste, setPaste] = useState('');
+  const [url, setUrl] = useState('');
+  const [source, setSource] = useState('text'); // text | link | pdf
   const [parsing, setParsing] = useState(false);
 
   // seed from the recipe being edited each time the sheet opens
@@ -238,21 +241,39 @@ function RecipeForm({ visible, initial, onClose, onSaved }: { visible: boolean; 
     }
   }, [visible, initial]);
 
+  type Parsed = NonNullable<Awaited<ReturnType<typeof api.ai.parseRecipe>>['recipe']>;
+  const applyRecipe = (recipe: Parsed | null) => {
+    if (!recipe) {
+      showToast('Couldn’t read that recipe — fill it in by hand', { kind: 'error' });
+      return;
+    }
+    if (recipe.name) setName(recipe.name);
+    if (recipe.approx_kcal != null) setKcal(String(recipe.approx_kcal));
+    if (recipe.cook_band) setBand(recipe.cook_band);
+    if (recipe.tags?.length) setTags(recipe.tags.join(', '));
+    const ing = [recipe.ingredients, recipe.steps ? `Steps:\n${recipe.steps}` : ''].filter(Boolean).join('\n\n');
+    if (ing) setIngredients(ing);
+  };
+
   async function autofill() {
-    if (!paste.trim()) return;
+    if (source === 'text' && !paste.trim()) return;
+    if (source === 'link' && !url.trim()) return;
     setParsing(true);
     try {
-      const { recipe } = await api.ai.parseRecipe(paste);
-      if (recipe) {
-        if (recipe.name) setName(recipe.name);
-        if (recipe.approx_kcal != null) setKcal(String(recipe.approx_kcal));
-        if (recipe.cook_band) setBand(recipe.cook_band);
-        if (recipe.tags?.length) setTags(recipe.tags.join(', '));
-        const ing = [recipe.ingredients, recipe.steps ? `Steps:\n${recipe.steps}` : ''].filter(Boolean).join('\n\n');
-        if (ing) setIngredients(ing);
+      if (source === 'link') {
+        applyRecipe((await api.ai.parseRecipeUrl(url.trim())).recipe);
+      } else if (source === 'pdf') {
+        const res = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true });
+        if (res.canceled || !res.assets?.[0]) return;
+        const a = res.assets[0];
+        const form = new FormData();
+        await appendImage(form, 'file', a.uri, { name: a.name || 'recipe.pdf', type: 'application/pdf' });
+        applyRecipe((await api.ai.parseRecipePdf(form)).recipe);
+      } else {
+        applyRecipe((await api.ai.parseRecipe(paste)).recipe);
       }
     } catch {
-      /* ignore — she can fill manually */
+      showToast('Couldn’t read that recipe — fill it in by hand', { kind: 'error' });
     } finally {
       setParsing(false);
     }
@@ -301,10 +322,24 @@ function RecipeForm({ visible, initial, onClose, onSaved }: { visible: boolean; 
     <Sheet visible={visible} onClose={onClose} title={editMode ? 'Edit recipe' : 'Add recipe'}>
       {!editMode ? (
         <>
-          <TextField label="Paste a recipe (optional)" value={paste} onChangeText={setPaste} placeholder="Paste ingredients & steps, then auto-fill" multiline />
+          <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
+            Import from
+          </T>
+          <View style={{ marginBottom: 12 }}>
+            <SegmentedControl options={['text', 'link', 'pdf']} value={source} onChange={setSource} labels={{ text: 'Text', link: 'Link', pdf: 'PDF' }} />
+          </View>
+          {source === 'text' ? (
+            <TextField label="Paste a recipe" value={paste} onChangeText={setPaste} placeholder="Paste ingredients & steps, then auto-fill" multiline />
+          ) : source === 'link' ? (
+            <TextField label="Recipe URL" value={url} onChangeText={setUrl} placeholder="https://…" />
+          ) : (
+            <T w={600} size={13} color={t.text3} style={{ marginBottom: 12 }}>
+              Pick a PDF and Marmalade will read the recipe out of it.
+            </T>
+          )}
           <View style={{ marginBottom: 18 }}>
             <Button variant="soft" icon="star" full onPress={autofill}>
-              {parsing ? 'Reading…' : 'Auto-fill with AI'}
+              {parsing ? 'Reading…' : source === 'pdf' ? 'Pick a PDF & auto-fill' : source === 'link' ? 'Fetch & auto-fill' : 'Auto-fill with AI'}
             </Button>
           </View>
         </>

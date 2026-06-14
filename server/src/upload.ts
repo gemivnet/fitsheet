@@ -6,7 +6,7 @@ import { extname } from 'node:path';
 import multer from 'multer';
 import { uploadsDir } from './db/index';
 
-const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif']);
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif', 'application/pdf']);
 
 export const upload = multer({
   storage: multer.diskStorage({

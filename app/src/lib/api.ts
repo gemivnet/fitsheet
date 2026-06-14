@@ -488,6 +488,8 @@ export const api = {
     parseFood: (text: string, slot?: string) => req<{ items: ParsedFood[] }>('POST', '/api/ai/parse-food', { text, slot }),
     parseFoodPhoto: (form: FormData) => req<{ items: ParsedFood[]; error?: string }>('POST', '/api/ai/parse-food-photo', form),
     parseRecipe: (text: string) => req<{ recipe: ParsedRecipe | null; error?: string }>('POST', '/api/ai/parse-recipe', { text }),
+    parseRecipeUrl: (url: string) => req<{ recipe: ParsedRecipe | null; error?: string }>('POST', '/api/ai/parse-recipe', { url }),
+    parseRecipePdf: (form: FormData) => req<{ recipe: ParsedRecipe | null; error?: string }>('POST', '/api/ai/parse-recipe-pdf', form),
     checkin: () => req<{ note: string | null }>('GET', '/api/ai/checkin'),
     daySummary: (date: string) => req<{ note: string | null }>('GET', `/api/ai/day-summary?date=${date}`),
     anomalies: (date: string) => req<{ anomalies: Anomaly[] }>('GET', `/api/ai/anomalies?date=${date}`),

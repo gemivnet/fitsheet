@@ -14,6 +14,7 @@
     "expo": "~56.0.9",
     "expo-camera": "~56.0.7",
     "expo-constants": "~56.0.17",
+    "expo-document-picker": "~56.0.4",
     "expo-font": "~56.0.5",
     "expo-image-picker": "~56.0.16",
     "expo-notifications": "~56.0.16",
