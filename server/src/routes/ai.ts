@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { generateCheckin } from '../ai/coach';
 import { generateMealPlan, type KeptMeal, type StoredPlan } from '../ai/mealplan';
+import { getWeeklyGoals, saveWeeklyGoals, suggestWeeklyGoals } from '../ai/weeklyGoals';
 import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
 import { parseFoodPhoto } from '../ai/parseFoodPhoto';
@@ -365,6 +366,25 @@ export function aiRouter(db: DB): Router {
     if (!plan || !Array.isArray(plan.days)) return res.status(400).json({ error: 'plan required' });
     writeBlob(db, 'meal_plan', plan);
     res.json({ plan });
+  });
+
+  // ── weekly goals (smart + manual checklist) ──────────────────────────────
+  r.get('/weekly-goals', (req, res) => {
+    res.json({ items: getWeeklyGoals(db, isDayStr(req.query.date) ? req.query.date : todayStr()) });
+  });
+  r.put('/weekly-goals', (req, res) => {
+    const date = isDayStr(req.body?.date) ? req.body.date : todayStr();
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    res.json({ items: saveWeeklyGoals(db, date, items) });
+  });
+  r.post('/weekly-goals/suggest', async (req, res) => {
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    const date = isDayStr(req.body?.date) ? req.body.date : todayStr();
+    try {
+      res.json({ items: await suggestWeeklyGoals(db, date) });
+    } catch (e) {
+      aiFail(res, 'goals', e);
+    }
   });
 
   return r;

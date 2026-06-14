@@ -13,7 +13,7 @@ import { T } from './primitives';
 import { api } from '../lib/api';
 import { MARMALADE_IDLE, pick } from '../lib/encouragement';
 import { todayStr } from '../lib/date';
-import { navigate } from '../navigation/ref';
+import { navigate, navigationRef } from '../navigation/ref';
 import { useTheme } from '../theme';
 
 export interface CompanionMessage {
@@ -102,6 +102,15 @@ export function Companion() {
   const [open, setOpen] = useState(true);
   const [idleLine, setIdleLine] = useState<string | null>(null);
 
+  // track the active route so she can step aside on the chat screen (she'd cover the input there)
+  const [route, setRoute] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const sync = () => setRoute(navigationRef.getCurrentRoute()?.name);
+    sync();
+    const unsub = navigationRef.addListener('state', sync);
+    return unsub;
+  }, []);
+
   const pending = messages.filter((m) => !dismissed.has(m.id));
   const current = pending[0] ?? null;
   const hasNews = !!current;
@@ -148,6 +157,13 @@ export function Companion() {
       ? { title: 'Marmalade', message: idleLine, heads: false, action: 'none' as const }
       : null;
 
+  // step aside on her own chat screen — you're already talking to her there
+  if (route === 'MarmaladeChat') return null;
+
+  const openChat = () => {
+    setDismissed((s) => new Set([...s, ...pending.map((m) => m.id)])); // engaging directly clears the queue
+    navigate('More', { screen: 'MarmaladeChat' });
+  };
   const translateY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -5] });
   return (
     <View pointerEvents="box-none" style={{ position: 'absolute', left: 14, bottom: insets.bottom + 64, alignItems: 'flex-start' }}>
@@ -175,10 +191,7 @@ export function Companion() {
                 </T>
               </Pressable>
             ) : null}
-            <Pressable
-              onPress={() => navigate('More', { screen: 'MarmaladeChat' })}
-              style={{ paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.accentSoft }}
-            >
+            <Pressable onPress={openChat} style={{ paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.accentSoft }}>
               <T w={800} size={13} color={t.accentPress}>
                 Chat
               </T>

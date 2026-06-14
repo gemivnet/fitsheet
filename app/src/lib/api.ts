@@ -498,6 +498,11 @@ export const api = {
       generate: (p: { days: number; guidance?: string; keepIds?: string[] }) => req<{ plan: MealPlan | null }>('POST', '/api/ai/meal-plan', p),
       save: (plan: MealPlan) => req<{ plan: MealPlan }>('PUT', '/api/ai/meal-plan', { plan }),
     },
+    weeklyGoals: {
+      get: (date: string) => req<{ items: WeeklyGoal[] }>('GET', `/api/ai/weekly-goals?date=${date}`),
+      save: (items: WeeklyGoal[], date: string) => req<{ items: WeeklyGoal[] }>('PUT', '/api/ai/weekly-goals', { items, date }),
+      suggest: (date: string) => req<{ items: WeeklyGoal[] }>('POST', '/api/ai/weekly-goals/suggest', { date }),
+    },
     restaurantItem: (restaurant: string, item: string) => req<{ item: RestaurantItem | null; cached?: boolean; error?: string }>('POST', '/api/ai/restaurant-item', { restaurant, item }),
     restaurantMenu: (restaurant: string) => req<({ id: number; query: string } & RestaurantItem)[]>('GET', `/api/ai/restaurant-menu?restaurant=${encodeURIComponent(restaurant)}`),
     restaurantFullMenu: (restaurant: string) => req<{ components: RestaurantComponent[] }>('POST', '/api/ai/restaurant-menu-full', { restaurant }),
