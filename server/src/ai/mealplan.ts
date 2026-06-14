@@ -38,9 +38,11 @@ export interface KeptMeal {
 const SYSTEM =
   'You are a practical meal planner for a busy home cook. Build a day-by-day plan whose daily totals ' +
   'stay at or under her calorie goal and land reasonably close to her macro goals (protein especially). ' +
-  "Strongly prefer her saved recipes and favorite foods and lean toward what she usually eats at each " +
-  'meal. Do NOT repeat the dinners she had in the last three days. Give EVERY meal a few real ingredients ' +
-  'and a one-line method so she knows what it is. Keep it simple and realistic.';
+  'Lean toward her saved recipes, favorite foods, and what she usually eats at each meal — BUT when she ' +
+  "gives instructions for this plan, those instructions WIN over her usual habits (if she says " +
+  '"scrambled eggs every other day", actually alternate eggs and her usual on the breakfast slot across ' +
+  'the days). Do NOT repeat the dinners she had in the last three days. Give EVERY meal a few real ' +
+  'ingredients and a one-line method so she knows what it is. Keep it simple and realistic.';
 
 export async function generateMealPlan(db: DB, opts: { days: number; guidance?: string; keep?: KeptMeal[] }): Promise<StoredPlan | null> {
   const days = Math.max(1, Math.min(7, opts.days || 3));
@@ -52,7 +54,9 @@ export async function generateMealPlan(db: DB, opts: { days: number; guidance?: 
     ? '\nThe user is KEEPING these meals — reproduce them in their day untouched and plan everything else around them, never duplicating them:\n' +
       keep.map((k) => `Day ${k.dayIndex + 1} ${k.meal.slot}: ${k.meal.name} (${k.meal.kcal} kcal)`).join('\n')
     : '';
-  const guidanceLine = opts.guidance?.trim() ? `\nHer instructions for this plan (follow them): ${opts.guidance.trim()}` : '';
+  const guidanceLine = opts.guidance?.trim()
+    ? `\n>>> HER INSTRUCTIONS FOR THIS PLAN — follow these even where they differ from her usual habits: ${opts.guidance.trim()}`
+    : '';
 
   const plan = await runTask(
     db,
