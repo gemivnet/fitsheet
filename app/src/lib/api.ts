@@ -212,6 +212,11 @@ export interface ParsedRecipe {
   ingredients: string | null;
   steps: string | null;
 }
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface Anomaly {
   severity: 'fyi' | 'heads_up';
   title: string;
@@ -458,6 +463,7 @@ export const api = {
     checkin: () => req<{ note: string | null }>('GET', '/api/ai/checkin'),
     daySummary: (date: string) => req<{ note: string | null }>('GET', `/api/ai/day-summary?date=${date}`),
     anomalies: (date: string) => req<{ anomalies: Anomaly[] }>('GET', `/api/ai/anomalies?date=${date}`),
+    chat: (messages: ChatTurn[], date: string) => req<{ reply: string }>('POST', '/api/ai/chat', { messages, date }),
     refreshCheckin: () => req<{ note: string | null }>('POST', '/api/ai/checkin/refresh'),
     mealPlan: (days: number) => req<{ plan: MealPlan | null }>('POST', '/api/ai/meal-plan', { days }),
     restaurantItem: (restaurant: string, item: string) => req<{ item: RestaurantItem | null; cached?: boolean; error?: string }>('POST', '/api/ai/restaurant-item', { restaurant, item }),

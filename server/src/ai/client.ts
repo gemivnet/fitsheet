@@ -19,6 +19,25 @@ export function client(): Anthropic {
   return _client;
 }
 
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/** Multi-turn chat (Marmalade). Returns the assistant's reply text. */
+export async function claudeChat(opts: { system: string; messages: ChatTurn[]; maxTokens?: number; model?: string }): Promise<string> {
+  const res = await client().messages.create({
+    model: opts.model ?? config.anthropicModel,
+    max_tokens: opts.maxTokens ?? 400,
+    system: opts.system,
+    messages: opts.messages.map((m) => ({ role: m.role, content: m.content })),
+  });
+  return res.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+}
+
 export async function claudeText(opts: { system?: string; content: Content; maxTokens?: number; model?: string; timeoutMs?: number }): Promise<string> {
   const res = await client().messages.create(
     {

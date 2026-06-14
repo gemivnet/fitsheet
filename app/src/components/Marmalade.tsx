@@ -26,39 +26,36 @@ export interface CompanionMessage {
 
 // ── the cat, as a pixel grid (16×18 sitting orange tabby) ─────────────────────
 const C: Record<string, string> = {
-  k: '#3A2A1E', // outline (dark brown)
-  o: '#F2933C', // orange coat
-  d: '#D9772C', // darker tabby stripe
-  c: '#FBE7CE', // cream chest / muzzle / paws
-  e: '#F7FCF8', // eye white
-  g: '#6BBF8A', // green iris
-  b: '#2E2A26', // pupil
-  n: '#E07E8B', // nose
-  p: '#F4A9B6', // inner ear pink
-  w: '#E6D5BE', // whisker
+  k: '#5A3420', // dark-brown outline
+  o: '#E07B2E', // orange coat
+  d: '#B5611F', // darker shading
+  y: '#F4D88C', // cream (inner ear, muzzle, chest blaze, paws)
+  s: 'rgba(60,45,30,0.15)', // ground shadow
 };
 const PIX = [
-  '...kk......kk...',
-  '..kook....kook..',
-  '..kopok..kopok..',
-  '..kooookkooook..',
-  '.koododoododook.',
-  '.koeeooooooeeok.',
-  '.kogboooooobgok.',
-  'wkooooccccooookw',
-  'wkooocnnnncoookw',
-  '.kooccccccccook.',
-  '.kooccccccccook.',
-  '.kooccccccccooo.',
-  '.kooccccccccooko',
-  '..koccccccccok.o',
-  '..koccccccccokdo',
-  '...kooooooook.do',
-  '....kkkkkkkk..kk',
+  '.....k......k.....',
+  '....kok....kok....',
+  '....kyok..koyk....',
+  '....kyookkooyk....',
+  '....kooooooook....',
+  '....kooooooook....',
+  '.kk.kokooookok.kk.',
+  '..k.kooyyyyook.k..',
+  '....koyyyyyyok....',
+  '.....kookkook.....',
+  '....koooyyoook....',
+  '....kooyyyyook....',
+  '....kdooyyoodk....',
+  '....kdoooooodk....',
+  '....kyooyyooyk....',
+  '....kyyoyyoyyk....',
+  '....kyykyykyyk....',
+  '....kkkkkkkkkk....',
+  '...ssssssssssss...',
 ];
 
-function CatSprite({ size }: { size: number }) {
-  const cols = 16;
+export function CatSprite({ size }: { size: number }) {
+  const cols = 18;
   const px = size / cols;
   const cells: React.ReactNode[] = [];
   PIX.forEach((row, y) => {
@@ -178,6 +175,14 @@ export function Companion() {
                 </T>
               </Pressable>
             ) : null}
+            <Pressable
+              onPress={() => navigate('More', { screen: 'MarmaladeChat' })}
+              style={{ paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.accentSoft }}
+            >
+              <T w={800} size={13} color={t.accentPress}>
+                Chat
+              </T>
+            </Pressable>
             <Pressable
               onPress={() => (current ? dismiss() : setIdleLine(null))}
               style={{ paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.hairline }}

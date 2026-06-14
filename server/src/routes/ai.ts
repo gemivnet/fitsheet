@@ -9,6 +9,8 @@ import { claudeStream } from '../ai/client';
 import { complete } from '../ai/complete';
 import { generateDayInsights } from '../ai/dayInsights';
 import { type Anomaly, generateAnomalies } from '../ai/anomalies';
+import { marmaladeReply } from '../ai/chat';
+import type { ChatTurn } from '../ai/client';
 import { cleanComponents, FULL_MENU_SYSTEM, fullMenuContent, restaurantFullMenu, restaurantItem, salvageObjects } from '../ai/restaurantItem';
 import { hasAnthropicKey } from '../config';
 import type { DB } from '../db/index';
@@ -83,6 +85,22 @@ export function aiRouter(db: DB): Router {
       res.json({ items: await parseFoodPhoto(db, req.file.path, req.file.mimetype, typeof req.body?.slot === 'string' ? req.body.slot : undefined) });
     } catch (e) {
       aiFail(res, 'parse', e);
+    }
+  });
+
+  // ── chat with Marmalade (multi-turn coaching in the moment) ──────────────
+  r.post('/chat', async (req, res) => {
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    const date = isDayStr(req.body?.date) ? req.body.date : todayStr();
+    const raw = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    const history: ChatTurn[] = raw
+      .filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .slice(-20) // keep the conversation bounded
+      .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 2000) }));
+    try {
+      res.json({ reply: await marmaladeReply(db, history, date) });
+    } catch (e) {
+      aiFail(res, 'chat', e);
     }
   });
 

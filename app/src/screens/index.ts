@@ -14,3 +14,4 @@ export { RecipesScreen } from './RecipesScreen';
 export { AnalyticsScreen } from './AnalyticsScreen';
 export { MealPlanScreen } from './MealPlanScreen';
 export { SettingsScreen } from './SettingsScreen';
+export { MarmaladeChatScreen } from './MarmaladeChatScreen';

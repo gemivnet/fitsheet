@@ -26,5 +26,5 @@ export { ReminderSync } from './ReminderSync';
 export { ToastHost, showToast, type ToastOptions } from './Toast';
 export { BankLine } from './BankLine';
 export { InfoDot, type InfoTopic } from './InfoSheet';
-export { Companion, type CompanionMessage } from './Marmalade';
+export { Companion, CatSprite, type CompanionMessage } from './Marmalade';
 export { CalorieCalculator } from './CalorieCalculator';
