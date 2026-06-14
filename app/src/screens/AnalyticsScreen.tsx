@@ -1,10 +1,10 @@
 // AnalyticsScreen.tsx — the "nerdy" tab: smoothed trend, empirical TDEE, rate, goal ETA, adherence.
 
 import React, { useCallback } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Icon, InfoDot, type InfoTopic, ProgressBar, Screen, SectionLabel, T, WeightChart, type WeightPoint } from '../components';
+import { Card, Icon, InfoDot, type InfoTopic, ProgressBar, Screen, ScreenHeader, SectionLabel, T, WeightChart, type WeightPoint } from '../components';
 import { api } from '../lib/api';
 import { prettyDate, todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
@@ -24,14 +24,7 @@ export function AnalyticsScreen() {
 
   return (
     <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, marginBottom: 16 }}>
-        <Pressable onPress={() => nav.goBack()} hitSlop={10}>
-          <Icon name="chevL" size={26} color={t.text2} />
-        </Pressable>
-        <T w={800} size={30}>
-          Analytics
-        </T>
-      </View>
+      <ScreenHeader title="Analytics" onBack={() => nav.goBack()} />
 
       {!d ? (
         <T w={700} color={t.text3} style={{ padding: 8, lineHeight: 21 }}>

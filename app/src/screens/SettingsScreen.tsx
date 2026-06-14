@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, Switch, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, CalorieCalculator, Card, Icon, Screen, SectionLabel, SegmentedControl, showToast, T, TextField } from '../components';
+import { Button, CalorieCalculator, Card, Screen, ScreenHeader, SectionLabel, SegmentedControl, showToast, T, TextField } from '../components';
 import { api, type Settings } from '../lib/api';
 import { confirmAction, notify } from '../lib/dialog';
 import { fromDisplayWeight, toDisplayWeight, type Units } from '../lib/units';
@@ -118,14 +118,7 @@ export function SettingsScreen() {
 
   return (
     <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, marginBottom: 16 }}>
-        <Pressable onPress={() => nav.goBack()} hitSlop={10}>
-          <Icon name="chevL" size={26} color={t.text2} />
-        </Pressable>
-        <T w={800} size={30}>
-          Settings
-        </T>
-      </View>
+      <ScreenHeader title="Settings" onBack={() => nav.goBack()} />
 
       <Card style={{ marginBottom: 16 }}>
         <SectionLabel style={{ marginBottom: 14 }}>Goals</SectionLabel>

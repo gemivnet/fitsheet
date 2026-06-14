@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, Icon, NumberPad, Screen, SegmentedControl, Sheet, showToast, T, TextField, useNumberField } from '../components';
+import { Button, Card, Chip, EmptyState, Icon, NumberPad, Screen, ScreenHeader, SegmentedControl, Sheet, showToast, T, TextField, useNumberField } from '../components';
 import { api, apiBase, type MealPlan, type PlannedMeal } from '../lib/api';
 import { todayStr } from '../lib/date';
 import { useTheme } from '../theme';
@@ -123,14 +123,7 @@ export function MealPlanScreen() {
 
   return (
     <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, marginBottom: 16 }}>
-        <Pressable onPress={() => nav.goBack()} hitSlop={10}>
-          <Icon name="chevL" size={26} color={t.text2} />
-        </Pressable>
-        <T w={800} size={30}>
-          Meal plan
-        </T>
-      </View>
+      <ScreenHeader title="Meal plan" onBack={() => nav.goBack()} />
 
       {/* controls */}
       <Card pad={16} style={{ marginBottom: 16 }}>
@@ -220,9 +213,11 @@ export function MealPlanScreen() {
           );
         })
       ) : !streaming && !planQ.isLoading ? (
-        <T w={600} size={14} color={t.text2} style={{ lineHeight: 20 }}>
-          No plan yet — set the days, add any instructions, and tap Generate. Meals come with ingredients and a quick method, and stay saved so you can tweak them.
-        </T>
+        <EmptyState
+          icon="food"
+          title="No plan yet"
+          body="Set the days, add any instructions, and tap Generate. Meals come with ingredients and a quick method, and stay saved so you can tweak them."
+        />
       ) : null}
 
       <View style={{ height: 20 }} />

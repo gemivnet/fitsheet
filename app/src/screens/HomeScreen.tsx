@@ -5,7 +5,7 @@ import { Linking, Pressable, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { applyNumberKey, BankLine, Button, CalorieRing, Card, CelebrationModal, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, T } from '../components';
+import { applyNumberKey, BankLine, Button, CalorieRing, Card, CelebrationModal, Checkbox, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, T } from '../components';
 import { api, type Suggestion, type SupplementToday, type UsualMeal } from '../lib/api';
 import { DAY_UNDER_GOAL, FIRST_LOG_OF_DAY, pick, WORKOUT_DONE } from '../lib/encouragement';
 import { slotForNow, todayStr } from '../lib/date';
@@ -183,20 +183,7 @@ export function HomeScreen() {
               <View key={key} style={{ paddingVertical: 10, borderBottomWidth: mi === MEALS.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Pressable onPress={() => mealComplete.mutate({ slot: key, on: !done })} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1, minWidth: 0 }}>
-                    <View
-                      style={{
-                        width: 22,
-                        height: 22,
-                        borderRadius: 7,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: done ? t.success : 'transparent',
-                        borderWidth: done ? 0 : 1.8,
-                        borderColor: t.hairline,
-                      }}
-                    >
-                      {done ? <Icon name="check" size={14} stroke={3} color="#fff" /> : null}
-                    </View>
+                    <Checkbox checked={done} size={22} />
                     <T w={800} size={15} color={done ? t.text3 : t.text}>
                       {label}
                     </T>
@@ -369,9 +356,7 @@ function SupplementsCard() {
       </View>
       {q.data.map((s, i) => (
         <Pressable key={s.id} onPress={() => onToggle(s)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: i === q.data!.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
-          <View style={{ width: 24, height: 24, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.taken ? t.success : 'transparent', borderWidth: s.taken ? 0 : 1.8, borderColor: t.hairline }}>
-            {s.taken ? <Icon name="check" size={15} stroke={3} color="#fff" /> : null}
-          </View>
+          <Checkbox checked={!!s.taken} />
           <T w={700} size={15} color={s.taken ? t.text3 : t.text} style={{ flex: 1, textDecorationLine: s.taken ? 'line-through' : 'none' }}>
             {s.name}
           </T>

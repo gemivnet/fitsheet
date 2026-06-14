@@ -7,7 +7,7 @@ import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BankLine, Button, Card, Chip, FoodRow, Icon, NumberPad, ProgressBar, RoundBtn, Screen, Sheet, showToast, T, useNumberField } from '../components';
+import { BankLine, Button, Card, Checkbox, Chip, FoodRow, Icon, NumberPad, ProgressBar, RoundBtn, Screen, Sheet, showToast, T, useNumberField } from '../components';
 import { api, type LogEntry } from '../lib/api';
 import { confirmAction } from '../lib/dialog';
 import { addDaysStr, isToday, prettyDate, slotForNow, todayStr } from '../lib/date';
@@ -117,22 +117,7 @@ export function FoodDayScreen({ navigation }: Props) {
             <Card pad={18}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: items.length ? 6 : 0 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-                  <Pressable onPress={() => mealComplete.mutate({ slot: key, on: !done })} hitSlop={8}>
-                    <View
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: 8,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: done ? t.success : 'transparent',
-                        borderWidth: done ? 0 : 1.8,
-                        borderColor: t.hairline,
-                      }}
-                    >
-                      {done ? <Icon name="check" size={15} stroke={3} color="#fff" /> : null}
-                    </View>
-                  </Pressable>
+                  <Checkbox checked={done} onToggle={() => mealComplete.mutate({ slot: key, on: !done })} />
                   <T w={800} size={18} color={done ? t.text3 : t.text}>
                     {label}
                   </T>

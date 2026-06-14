@@ -6,7 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, EmptyState, Icon, Screen, SegmentedControl, Sheet, showToast, T, TextField } from '../components';
+import { Button, Card, Chip, EmptyState, Icon, Screen, ScreenHeader, SegmentedControl, Sheet, showToast, T, TextField } from '../components';
 import { api, fileUrl, type Recipe } from '../lib/api';
 import { appendImage } from '../lib/upload';
 import { confirmAction } from '../lib/dialog';
@@ -37,14 +37,7 @@ export function RecipesScreen() {
 
   return (
     <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, marginBottom: 16 }}>
-        <Pressable onPress={() => nav.goBack()} hitSlop={10}>
-          <Icon name="chevL" size={26} color={t.text2} />
-        </Pressable>
-        <T w={800} size={30}>
-          Recipes
-        </T>
-      </View>
+      <ScreenHeader title="Recipes" onBack={() => nav.goBack()} />
 
       {recipes.data && recipes.data.length ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 14 }}>

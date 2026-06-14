@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Card, Icon, Screen, T, TextField } from '../components';
+import { Card, Checkbox, Icon, Screen, ScreenHeader, T, TextField } from '../components';
 import { api, type WeeklyGoal } from '../lib/api';
 import { todayStr } from '../lib/date';
 import { useTheme } from '../theme';
@@ -36,14 +36,7 @@ export function GoalsScreen() {
 
   return (
     <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, marginBottom: 16 }}>
-        <Pressable onPress={() => nav.goBack()} hitSlop={10}>
-          <Icon name="chevL" size={26} color={t.text2} />
-        </Pressable>
-        <T w={800} size={30}>
-          Weekly goals
-        </T>
-      </View>
+      <ScreenHeader title="Weekly goals" onBack={() => nav.goBack()} />
 
       <Card pad={16}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: items.length ? 8 : 4 }}>
@@ -60,22 +53,7 @@ export function GoalsScreen() {
 
         {items.map((g) => (
           <View key={g.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 }}>
-            <Pressable onPress={() => toggle(g)} hitSlop={6} disabled={!!g.auto}>
-              <View
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 7,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: g.done ? t.success : 'transparent',
-                  borderWidth: g.done ? 0 : 1.8,
-                  borderColor: t.hairline,
-                }}
-              >
-                {g.done ? <Icon name="check" size={15} stroke={3} color="#fff" /> : null}
-              </View>
-            </Pressable>
+            <Checkbox checked={!!g.done} onToggle={g.auto ? undefined : () => toggle(g)} />
             <T w={700} size={15} color={g.done ? t.text3 : t.text} style={{ flex: 1, textDecorationLine: g.done ? 'line-through' : 'none' }}>
               {g.text}
             </T>

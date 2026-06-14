@@ -4,7 +4,7 @@ import React, { useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, EmptyState, Icon, Screen, Sheet, showToast, T, TextField } from '../components';
+import { Button, Card, Chip, EmptyState, Screen, ScreenHeader, Sheet, showToast, T, TextField } from '../components';
 import { api, type Note } from '../lib/api';
 import { confirmAction } from '../lib/dialog';
 import { prettyDate, todayStr } from '../lib/date';
@@ -32,16 +32,7 @@ export function NotesScreen() {
 
   return (
     <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 16 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Pressable onPress={() => nav.goBack()} hitSlop={10}>
-            <Icon name="chevL" size={26} color={t.text2} />
-          </Pressable>
-          <T w={800} size={30}>
-            Journal
-          </T>
-        </View>
-      </View>
+      <ScreenHeader title="Journal" onBack={() => nav.goBack()} />
 
       {notes.data && notes.data.length ? (
         notes.data.map((n) => (
