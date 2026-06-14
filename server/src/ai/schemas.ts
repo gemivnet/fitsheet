@@ -29,6 +29,34 @@ export const ParsedRecipeSchema = z.object({
   steps: z.string().nullable().catch(null),
 });
 
+// ── meal plan ────────────────────────────────────────────────────────────────
+export const PlannedMealSchema = z.object({
+  slot: z.enum(['breakfast', 'lunch', 'dinner', 'snacks']).catch('snacks'),
+  name: z.string().min(1),
+  kcal: num,
+  protein_g: numOr(0),
+  carb_g: numOr(0),
+  fat_g: numOr(0),
+  ingredients: z.array(z.string()).catch([]),
+  steps: z.string().catch(''), // a one-line method
+});
+export const MealPlanDaySchema = z.object({
+  label: z.string(),
+  meals: z.array(PlannedMealSchema),
+});
+export const MealPlanSchema = z.object({ days: z.array(MealPlanDaySchema) });
+
+// AI weekly-goal suggestions. `auto` ties a goal to data we can measure (so it ticks itself).
+export const WeeklyGoalSuggestionsSchema = z.object({
+  goals: z.array(
+    z.object({
+      text: z.string().min(1),
+      auto: z.enum(['log_daily', 'under_goal', 'walks', 'weigh_in', 'none']).catch('none'),
+      target: numOr(0),
+    }),
+  ),
+});
+
 const macroBlock = z
   .object({ kcal: num, protein_g: numOr(0), carb_g: numOr(0), fat_g: numOr(0) })
   .nullable()

@@ -224,8 +224,36 @@ export interface Anomaly {
   action: 'none' | 'open_day' | 'open_weight' | 'open_analytics';
 }
 
+export interface PlannedMeal {
+  id: string;
+  slot: string;
+  name: string;
+  kcal: number;
+  protein_g: number;
+  carb_g: number;
+  fat_g: number;
+  ingredients: string[];
+  steps: string;
+  locked: boolean;
+}
+export interface MealPlanDay {
+  label: string;
+  meals: PlannedMeal[];
+}
 export interface MealPlan {
-  days: { label: string; meals: { slot: string; name: string; kcal: number }[]; total: number }[];
+  generated_at: string;
+  days_count: number;
+  guidance: string;
+  days: MealPlanDay[];
+}
+
+export interface WeeklyGoal {
+  id: string;
+  text: string;
+  source: 'ai' | 'me';
+  auto: 'log_daily' | 'under_goal' | 'walks' | 'weigh_in' | null;
+  target: number;
+  done: boolean;
 }
 
 export interface Dashboard {
@@ -465,7 +493,11 @@ export const api = {
     anomalies: (date: string) => req<{ anomalies: Anomaly[] }>('GET', `/api/ai/anomalies?date=${date}`),
     chat: (messages: ChatTurn[], date: string) => req<{ reply: string }>('POST', '/api/ai/chat', { messages, date }),
     refreshCheckin: () => req<{ note: string | null }>('POST', '/api/ai/checkin/refresh'),
-    mealPlan: (days: number) => req<{ plan: MealPlan | null }>('POST', '/api/ai/meal-plan', { days }),
+    mealPlan: {
+      get: () => req<{ plan: MealPlan | null }>('GET', '/api/ai/meal-plan'),
+      generate: (p: { days: number; guidance?: string; keepIds?: string[] }) => req<{ plan: MealPlan | null }>('POST', '/api/ai/meal-plan', p),
+      save: (plan: MealPlan) => req<{ plan: MealPlan }>('PUT', '/api/ai/meal-plan', { plan }),
+    },
     restaurantItem: (restaurant: string, item: string) => req<{ item: RestaurantItem | null; cached?: boolean; error?: string }>('POST', '/api/ai/restaurant-item', { restaurant, item }),
     restaurantMenu: (restaurant: string) => req<({ id: number; query: string } & RestaurantItem)[]>('GET', `/api/ai/restaurant-menu?restaurant=${encodeURIComponent(restaurant)}`),
     restaurantFullMenu: (restaurant: string) => req<{ components: RestaurantComponent[] }>('POST', '/api/ai/restaurant-menu-full', { restaurant }),

@@ -1,10 +1,10 @@
-// coach.ts — weekly check-in note + a calorie-fitting meal plan, both grounded in her real data.
+// coach.ts — the weekly check-in note, grounded in her real data. (Meal planning moved to
+// mealplan.ts, which uses the structured-output task layer.)
 
 import { buildAnalytics } from '../analytics';
 import type { DB } from '../db/index';
 import { getSettings } from '../settings';
-import { claudeText, extractJson, FAST_MODEL } from './client';
-import { personalSlotHint } from './personalContext';
+import { claudeText, FAST_MODEL } from './client';
 
 export async function generateCheckin(db: DB): Promise<string> {
   const s = getSettings(db);
@@ -50,38 +50,4 @@ export async function generateCheckin(db: DB): Promise<string> {
     maxTokens: 300,
   });
   return note.trim();
-}
-
-export interface MealPlan {
-  days: { label: string; meals: { slot: string; name: string; kcal: number }[]; total: number }[];
-}
-
-export async function generateMealPlan(db: DB, days: number): Promise<MealPlan | null> {
-  const s = getSettings(db);
-  const recipes = db.prepare('SELECT name, approx_kcal, cook_band, tags_json FROM recipes ORDER BY is_favorite DESC, updated_at DESC LIMIT 40').all();
-  const favorites = db.prepare('SELECT name, kcal_100g, serving_g FROM foods WHERE is_favorite = 1 LIMIT 40').all();
-  // what she actually ate the last 3 days, so the plan doesn't repeat her dinners
-  const recentRows = db
-    .prepare("SELECT day_date, meal_slot, name FROM food_log WHERE day_date >= date('now','-3 days') ORDER BY day_date DESC")
-    .all() as { day_date: string; meal_slot: string; name: string }[];
-  const recent: Record<string, Record<string, string[]>> = {};
-  for (const r of recentRows) ((recent[r.day_date] ??= {})[r.meal_slot] ??= []).push(r.name);
-  const slotHint = personalSlotHint(db);
-  const out = await claudeText({
-    system:
-      'You are a practical meal planner. Build a day-by-day plan whose daily totals stay at or under the ' +
-      "calorie goal, and land reasonably close to the macro goals (protein especially). Strongly prefer the user's " +
-      'saved recipes and favorite foods, and lean toward what they usually eat at each meal. Do NOT repeat ' +
-      'dinners they had in the last three days. Reuse leftovers across days where it makes sense. Keep it ' +
-      'simple and realistic for a busy home cook.',
-    content:
-      `Daily calorie goal: ${s.daily_calorie_goal}. Macro goals: protein ${s.protein_goal_g} g, carbs ${s.carb_goal_g} g, fat ${s.fat_goal_g} g. Number of days: ${days}.\n` +
-      (slotHint ? `Their per-meal habits: ${slotHint}.\n` : '') +
-      `What they ate the last 3 days (JSON): ${JSON.stringify(recent)}\n` +
-      `Saved recipes (JSON): ${JSON.stringify(recipes)}\n` +
-      `Favorite foods (JSON): ${JSON.stringify(favorites)}\n` +
-      'Reply ONLY JSON: {"days":[{"label": string, "meals":[{"slot": string, "name": string, "kcal": number}], "total": number}]}',
-    maxTokens: 2000,
-  });
-  return extractJson<MealPlan>(out);
 }

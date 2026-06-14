@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { generateCheckin, generateMealPlan } from '../ai/coach';
+import { generateCheckin } from '../ai/coach';
+import { generateMealPlan, type KeptMeal, type StoredPlan } from '../ai/mealplan';
 import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
 import { parseFoodPhoto } from '../ai/parseFoodPhoto';
@@ -27,6 +28,23 @@ function aiFail(res: { status: (n: number) => { json: (o: unknown) => unknown } 
 
 function maxMilestoneId(db: DB): number {
   return ((db.prepare('SELECT MAX(id) AS m FROM milestones').get() as { m: number | null }).m ?? 0) as number;
+}
+
+// app state stored as JSON in the generic settings KV (meal plan, weekly goals) — same pattern
+// as the cached AI blobs, no migration needed.
+function readBlob<T>(db: DB, key: string): T | null {
+  const row = db.prepare('SELECT value_json FROM settings WHERE key = ?').get(key) as { value_json: string } | undefined;
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value_json) as T;
+  } catch {
+    return null;
+  }
+}
+function writeBlob(db: DB, key: string, value: unknown): void {
+  db.prepare(
+    'INSERT INTO settings (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at',
+  ).run(key, JSON.stringify(value), nowIso());
 }
 
 function cacheCheckin(db: DB, note: string): void {
@@ -314,15 +332,39 @@ export function aiRouter(db: DB): Router {
     }
   });
 
-  // ── meal plan that fits the calorie goal ─────────────────────────────────
+  // ── meal plan: saved, editable, with lock-and-regenerate ─────────────────
+  r.get('/meal-plan', (_req, res) => {
+    res.json({ plan: readBlob<StoredPlan>(db, 'meal_plan') });
+  });
+
   r.post('/meal-plan', async (req, res) => {
     if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
     const days = Math.max(1, Math.min(7, Number(req.body?.days) || 3));
+    const guidance = typeof req.body?.guidance === 'string' ? req.body.guidance : '';
+    // keep = the locked meals from the saved plan whose ids the client sent
+    const keepIds: string[] = Array.isArray(req.body?.keepIds) ? req.body.keepIds : [];
+    const saved = readBlob<StoredPlan>(db, 'meal_plan');
+    const keep: KeptMeal[] = [];
+    if (saved && keepIds.length) {
+      saved.days.forEach((d, dayIndex) => {
+        for (const m of d.meals) if (keepIds.includes(m.id)) keep.push({ dayIndex, meal: { ...m, locked: true } });
+      });
+    }
     try {
-      res.json({ plan: await generateMealPlan(db, days) });
+      const plan = await generateMealPlan(db, { days, guidance, keep });
+      if (plan) writeBlob(db, 'meal_plan', plan);
+      res.json({ plan });
     } catch (e) {
       aiFail(res, 'plan', e);
     }
+  });
+
+  // save a client-edited plan (lock toggles, add/remove/edit a meal) — the blob is the source of truth
+  r.put('/meal-plan', (req, res) => {
+    const plan = req.body?.plan;
+    if (!plan || !Array.isArray(plan.days)) return res.status(400).json({ error: 'plan required' });
+    writeBlob(db, 'meal_plan', plan);
+    res.json({ plan });
   });
 
   return r;
