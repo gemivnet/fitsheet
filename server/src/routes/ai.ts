@@ -327,7 +327,7 @@ export function aiRouter(db: DB): Router {
     res.flushHeaders?.();
     const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
     try {
-      const out = await getRestaurantMenu(db, restaurant, { refresh, onStatus: (m) => send({ status: m }) });
+      const out = await getRestaurantMenu(db, restaurant, { refresh, onStatus: (m) => send({ status: m }), onItem: (item) => send({ item }) });
       send({ done: true, ...out });
     } catch (e) {
       console.warn('[ai] restaurant items stream failed:', e);

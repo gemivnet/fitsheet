@@ -4,9 +4,10 @@
 // with its parts + add-ons) via the structured-output path, persisted in restaurant_items so the
 // menu loads instantly afterwards. No official source found → falls back to estimated.
 
-import { claudeResearch } from './client';
+import { claudeResearch, claudeStream } from './client';
 import { runTask } from './task';
-import { RestaurantMenuItemSchema, RestaurantMenuSchema } from './schemas';
+import { salvageObjects } from './restaurantItem';
+import { RestaurantMenuItemSchema } from './schemas';
 import { stripRestaurantPrefix } from '../util';
 import { nowIso } from '../util';
 import type { DB } from '../db/index';
@@ -104,6 +105,11 @@ const MENU_SYSTEM =
   'Name items and modifiers as they read on the menu, WITHOUT the brand in front. ' +
   'Set each item\'s "confidence" to "official" ONLY when its numbers come from the official source provided; otherwise "estimated". ' +
   'Be reasonably complete for the popular options.';
+const menuContent = (restaurant: string, grounding: string): string =>
+  `Restaurant: ${restaurant}\n\n${grounding}\n\n` +
+  'Reply ONLY a JSON array, no prose: ' +
+  '[{"name":string,"category":string,"grams":number,"kcal":number,"protein_g":number,"carb_g":number,"fat_g":number,"confidence":"official"|"estimated",' +
+  '"modifiers":[{"name":string,"kind":"part"|"addon","grams":number,"kcal":number,"protein_g":number,"carb_g":number,"fat_g":number,"default_on":boolean}]}]';
 
 function cleanItem(raw: any, restaurant: string, grounded: boolean, sourceUrl: string | null): RestaurantMenuItem {
   const n = (v: any) => Math.max(0, Math.round(Number(v) || 0));
@@ -181,7 +187,7 @@ function safeJson<T>(s: string, fallback: T): T {
 export async function getRestaurantMenu(
   db: DB,
   restaurant: string,
-  opts: { refresh?: boolean; onStatus?: (m: string) => void } = {},
+  opts: { refresh?: boolean; onStatus?: (m: string) => void; onItem?: (it: RestaurantMenuItem) => void } = {},
 ): Promise<{ items: RestaurantMenuItem[]; sourceUrls: string[]; found: boolean }> {
   const existing = loadRestaurantItems(db, restaurant);
   if (existing.length && !opts.refresh) {
@@ -194,14 +200,29 @@ export async function getRestaurantMenu(
   const grounding = nut.found
     ? `Official nutrition pulled from ${nut.sourceUrls.join(', ')}:\n${nut.digest}\n\nUse these EXACT published numbers; set confidence "official" for items covered by it, "estimated" for any you had to fill in.`
     : 'No official source was found — give realistic ESTIMATED nutrition for the popular items and set every confidence to "estimated".';
-  const parsed = await runTask(
-    db,
-    { name: 'restaurant-menu', schema: RestaurantMenuSchema, system: MENU_SYSTEM, maxTokens: 8000 },
-    { content: `Restaurant: ${restaurant}\n\n${grounding}` },
-  );
-  const items = (parsed?.items ?? []).map((it) => cleanItem(it, restaurant, nut.found, nut.sourceUrls[0] ?? null)).filter((it) => it.name && it.kcal >= 0);
-  if (items.length) persistItems(db, restaurant, items);
-  opts.onStatus?.(`Found ${items.length} items.`);
+
+  // Stream the structuring so items pop in as they're generated. salvageObjects pulls each COMPLETE
+  // item object out of the partial JSON array; we emit + collect the ones we haven't seen yet.
+  const collected: RestaurantMenuItem[] = [];
+  let acc = '';
+  let emitted = 0;
+  const drain = () => {
+    const objs = salvageObjects(acc);
+    for (; emitted < objs.length; emitted++) {
+      const it = cleanItem(objs[emitted], restaurant, nut.found, nut.sourceUrls[0] ?? null);
+      if (it.name) {
+        collected.push(it);
+        opts.onItem?.(it);
+      }
+    }
+  };
+  try {
+    await claudeStream({ system: MENU_SYSTEM, content: menuContent(restaurant, grounding), maxTokens: 8000, timeoutMs: 150_000, onText: (d) => { acc += d; drain(); } });
+  } catch (e) {
+    console.warn('[ai] menu structuring failed', e);
+  }
+  drain(); // catch any final object completed at the very end
+  if (collected.length) persistItems(db, restaurant, collected);
   return { items: loadRestaurantItems(db, restaurant), sourceUrls: nut.sourceUrls, found: nut.found };
 }
 

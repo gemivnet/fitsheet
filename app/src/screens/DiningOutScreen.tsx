@@ -1,7 +1,8 @@
-// DiningOutScreen.tsx — items-first dining. Pick a restaurant → its menu loads (grounded in the
-// chain's OFFICIAL web nutrition, cached) → tap the item(s) you're getting → customize each (toggle
-// its parts + add-ons, set quantity) → review the order tray → log (one diary row per item, tagged
-// "eating out"). Saved orders re-log in one tap.
+// DiningOutScreen.tsx — items-first dining. Pick a restaurant → its menu loads (items stream in,
+// grounded in the chain's OFFICIAL web nutrition, cached) → tap the item(s) you're getting →
+// customize each (toggle its parts + add-ons at light/normal/extra, set quantity) → review the order
+// tray → log (one diary row per item, tagged "eating out"). Save an order as a favorite to re-log
+// it in one tap.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, View } from 'react-native';
@@ -23,6 +24,12 @@ const MEALS: { key: string; label: string }[] = [
 const norm = (s: string) => s.toLowerCase().trim();
 const ITEM_KEYS = [{ name: 'name' as const, weight: 1 }];
 
+type Level = 'light' | 'normal' | 'extra';
+const MULT: Record<Level, number> = { light: 0.5, normal: 1, extra: 2 };
+// Selection: a modifier is "on" when present in the map, at the chosen level; absent = off.
+type Sel = Record<string, Level>;
+const defaultSel = (item: MenuItem): Sel => Object.fromEntries(item.modifiers.filter((m) => m.default_on).map((m) => [m.name, 'normal' as Level]));
+
 interface Totals {
   grams: number;
   kcal: number;
@@ -30,19 +37,18 @@ interface Totals {
   carb: number;
   fat: number;
 }
-// A modifier is "on" if explicitly toggled, else its default. Unit totals = sum of on modifiers,
-// or the item's own numbers when it has no breakdown.
-const modOn = (m: ItemModifier, mods: Record<string, boolean>): boolean => mods[m.name] ?? m.default_on;
-function unitTotals(item: MenuItem, mods: Record<string, boolean>): Totals {
+function unitTotals(item: MenuItem, sel: Sel): Totals {
   if (!item.modifiers.length) return { grams: item.grams, kcal: item.kcal, protein: item.protein_g, carb: item.carb_g, fat: item.fat_g };
   const acc: Totals = { grams: 0, kcal: 0, protein: 0, carb: 0, fat: 0 };
   for (const m of item.modifiers) {
-    if (!modOn(m, mods)) continue;
-    acc.grams += m.grams;
-    acc.kcal += m.kcal;
-    acc.protein += m.protein_g;
-    acc.carb += m.carb_g;
-    acc.fat += m.fat_g;
+    const lvl = sel[m.name];
+    if (!lvl) continue;
+    const mult = MULT[lvl];
+    acc.grams += m.grams * mult;
+    acc.kcal += m.kcal * mult;
+    acc.protein += m.protein_g * mult;
+    acc.carb += m.carb_g * mult;
+    acc.fat += m.fat_g * mult;
   }
   return acc;
 }
@@ -50,7 +56,7 @@ function unitTotals(item: MenuItem, mods: Record<string, boolean>): Totals {
 interface TrayEntry {
   key: number;
   item: MenuItem;
-  mods: Record<string, boolean>;
+  sel: Sel;
   qty: number;
 }
 let traySeq = 0;
@@ -74,10 +80,12 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
   const [tray, setTray] = useState<TrayEntry[]>([]);
   const [customizing, setCustomizing] = useState<TrayEntry | null>(null);
   const [building, setBuilding] = useState(false);
+  const [buildingItems, setBuildingItems] = useState<MenuItem[]>([]);
   const [status, setStatus] = useState('');
   const [sourceUrls, setSourceUrls] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [customText, setCustomText] = useState('');
+  const [saving, setSaving] = useState(false);
   const builtFor = useRef<string>(''); // restaurants we've already auto-built, to avoid re-triggering
 
   const rest = restaurant.trim();
@@ -87,25 +95,10 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
 
   const items = menu.data?.items ?? [];
 
-  // Auto-build the menu the first time a restaurant has none cached (web search → structure).
-  useEffect(() => {
-    if (!rest || menu.isLoading || building) return;
-    if (items.length === 0 && builtFor.current !== norm(rest)) {
-      builtFor.current = norm(rest);
-      void streamMenu(false);
-    }
-  }, [rest, menu.isLoading, items.length]);
-
-  // reset transient menu state when the restaurant changes
-  useEffect(() => {
-    setQ('');
-    setError(null);
-    setSourceUrls([]);
-  }, [rest]);
-
   const streamMenu = async (refresh: boolean) => {
     if (!rest || building) return;
     setBuilding(true);
+    setBuildingItems([]);
     setError(null);
     setStatus('Looking up the menu…');
     try {
@@ -143,6 +136,7 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
             continue;
           }
           if (typeof msg.status === 'string') setStatus(msg.status);
+          if (msg.item) setBuildingItems((a) => [...a, msg.item as MenuItem]);
           if (msg.error) setError('Couldn’t load the menu — try again or add items by hand.');
           if (msg.done) setSourceUrls(Array.isArray(msg.sourceUrls) ? msg.sourceUrls : []);
         }
@@ -155,7 +149,26 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
     }
   };
 
+  // Auto-build the menu the first time a restaurant has none cached (web search → structure).
+  useEffect(() => {
+    if (!rest || menu.isLoading || building) return;
+    if (items.length === 0 && builtFor.current !== norm(rest)) {
+      builtFor.current = norm(rest);
+      void streamMenu(false);
+    }
+  }, [rest, menu.isLoading, items.length]);
+
+  // reset transient menu state when the restaurant changes
+  useEffect(() => {
+    setQ('');
+    setError(null);
+    setSourceUrls([]);
+    setBuildingItems([]);
+  }, [rest]);
+
   const filtered = useMemo(() => (q.trim() ? fuzzy(q, items, ITEM_KEYS, 30) : items), [q, items]);
+  // while building, show the items streaming in; once loaded, the searchable menu
+  const shownItems = building && buildingItems.length ? buildingItems : filtered;
 
   // build one custom item the user typed that isn't on the menu
   const buildCustom = useMutation({
@@ -172,7 +185,7 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
     meta: { suppressErrorToast: true },
   });
 
-  const openCustomize = (item: MenuItem) => setCustomizing({ key: ++traySeq, item, mods: {}, qty: 1 });
+  const openCustomize = (item: MenuItem) => setCustomizing({ key: ++traySeq, item, sel: defaultSel(item), qty: 1 });
   const commitCustomize = (entry: TrayEntry) => {
     setTray((tr) => {
       const i = tr.findIndex((e) => e.key === entry.key);
@@ -180,13 +193,12 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
     });
     setCustomizing(null);
   };
-  const editTray = (e: TrayEntry) => setCustomizing(e);
   const removeTray = (key: number) => setTray((tr) => tr.filter((e) => e.key !== key));
 
   const trayTotals = useMemo(() => {
     const acc: Totals = { grams: 0, kcal: 0, protein: 0, carb: 0, fat: 0 };
     for (const e of tray) {
-      const u = unitTotals(e.item, e.mods);
+      const u = unitTotals(e.item, e.sel);
       acc.grams += (u.grams || 0) * e.qty;
       acc.kcal += u.kcal * e.qty;
       acc.protein += u.protein * e.qty;
@@ -201,7 +213,7 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
     let logged = 0;
     try {
       for (const e of tray) {
-        const u = unitTotals(e.item, e.mods);
+        const u = unitTotals(e.item, e.sel);
         const unitG = u.grams > 0 ? u.grams : 100;
         const grams = Math.round(unitG * e.qty);
         await api.foodLog.add({
@@ -258,6 +270,8 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
       return 'source';
     }
   };
+  const slotLabel = MEALS.find((m) => m.key === slot)?.label ?? slot;
+  const defaultOrderName = tray.length ? tray.map((e) => (e.qty > 1 ? `${e.qty}× ` : '') + e.item.name).join(', ') : '';
 
   return (
     <View>
@@ -332,14 +346,12 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
           ) : null}
 
           {building ? (
-            <Card pad={18} style={{ marginBottom: Space[2.5] }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: Space[2.5] }}>
-                <ActivityIndicator color={t.accent} />
-                <T w={800} size={FontSize.body} style={{ flexShrink: 1 }} numberOfLines={2}>
-                  {status || 'Looking up the menu…'}
-                </T>
-              </View>
-            </Card>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Space[2.5], marginBottom: Space[2.5] }}>
+              <ActivityIndicator color={t.accent} />
+              <T w={800} size={FontSize.meta} color={t.text2} style={{ flexShrink: 1 }} numberOfLines={2}>
+                {status || 'Looking up the menu…'}
+              </T>
+            </View>
           ) : null}
 
           {error ? (
@@ -348,16 +360,16 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
             </T>
           ) : null}
 
-          {/* menu item list */}
-          {items.length ? (
+          {/* menu item list (items stream in while building) */}
+          {shownItems.length ? (
             <>
-              {items.length > 8 ? <TextField value={q} onChangeText={setQ} placeholder="Search the menu" /> : null}
+              {!building && items.length > 8 ? <TextField value={q} onChangeText={setQ} placeholder="Search the menu" /> : null}
               <Card pad={6} style={{ marginBottom: Space[3] }}>
-                {filtered.map((it, i) => (
+                {shownItems.map((it, i) => (
                   <Pressable
                     key={`${it.name}-${i}`}
                     onPress={() => openCustomize(it)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: Space[3], padding: Space[3], borderBottomWidth: i === filtered.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: Space[3], padding: Space[3], borderBottomWidth: i === shownItems.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}
                   >
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <T w={800} size={FontSize.body} numberOfLines={1}>
@@ -374,7 +386,7 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
                     </View>
                   </Pressable>
                 ))}
-                {filtered.length === 0 ? (
+                {!building && filtered.length === 0 ? (
                   <T w={600} size={FontSize.meta} color={t.text3} style={{ padding: Space[2] }}>
                     No match — add it as a custom item below.
                   </T>
@@ -420,10 +432,10 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
                 </View>
               </View>
               {tray.map((e) => {
-                const u = unitTotals(e.item, e.mods);
+                const u = unitTotals(e.item, e.sel);
                 return (
                   <View key={e.key} style={{ flexDirection: 'row', alignItems: 'center', gap: Space[2.5], paddingVertical: Space[2] }}>
-                    <Pressable onPress={() => editTray(e)} style={{ flex: 1, minWidth: 0 }}>
+                    <Pressable onPress={() => setCustomizing(e)} style={{ flex: 1, minWidth: 0 }}>
                       <T w={800} size={FontSize.body} numberOfLines={1}>
                         {e.qty > 1 ? `${e.qty}× ` : ''}
                         {e.item.name}
@@ -447,9 +459,14 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
           ) : null}
 
           {tray.length ? (
-            <Button full size="lg" icon="check" onPress={logTray}>
-              Log {tray.length} {tray.length === 1 ? 'item' : 'items'} to {MEALS.find((m) => m.key === slot)?.label ?? slot}
-            </Button>
+            <View style={{ gap: Space[2.5] }}>
+              <Button full size="lg" icon="check" onPress={logTray}>
+                Log {tray.length} {tray.length === 1 ? 'item' : 'items'} to {slotLabel}
+              </Button>
+              <Button full variant="soft" icon="star" onPress={() => setSaving(true)}>
+                Save order as a favorite
+              </Button>
+            </View>
           ) : null}
         </>
       )}
@@ -460,6 +477,20 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
       </T>
 
       <CustomizeSheet entry={customizing} onClose={() => setCustomizing(null)} onCommit={commitCustomize} />
+      <SaveFavoriteSheet
+        visible={saving}
+        defaultName={defaultOrderName}
+        restaurant={rest}
+        totals={trayTotals}
+        onClose={() => setSaving(false)}
+        onSaved={() => {
+          setSaving(false);
+          qc.invalidateQueries({ queryKey: ['foods'] });
+          qc.invalidateQueries({ queryKey: ['dining', rest] });
+          qc.invalidateQueries({ queryKey: ['restaurants'] });
+          notify('Saved', 'This order is in your foods for one-tap logging next time.');
+        }}
+      />
     </View>
   );
 }
@@ -487,36 +518,67 @@ function ConfidenceBadge({ confidence }: { confidence: MenuItem['confidence'] })
   return null;
 }
 
-// Customize one item: toggle its parts + add-ons, set quantity, see live kcal, add to the order.
+function LevelPick({ value, onChange }: { value: Level; onChange: (l: Level) => void }) {
+  const t = useTheme();
+  const opts: { k: Level; l: string }[] = [
+    { k: 'light', l: 'L' },
+    { k: 'normal', l: 'N' },
+    { k: 'extra', l: 'E' },
+  ];
+  return (
+    <View style={{ flexDirection: 'row', gap: 2, backgroundColor: t.surface2, borderRadius: 9, padding: 2 }}>
+      {opts.map((o) => (
+        <Pressable key={o.k} onPress={() => onChange(o.k)} hitSlop={4} style={{ paddingVertical: 4, paddingHorizontal: 9, borderRadius: 7, backgroundColor: value === o.k ? t.accent : 'transparent' }}>
+          <T w={800} size={FontSize.caption} color={value === o.k ? '#fff' : t.text3}>
+            {o.l}
+          </T>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+// Customize one item: toggle its parts + add-ons (light / normal / extra), set quantity, see live
+// kcal, add to the order.
 function CustomizeSheet({ entry, onClose, onCommit }: { entry: TrayEntry | null; onClose: () => void; onCommit: (e: TrayEntry) => void }) {
   const t = useTheme();
-  const [mods, setMods] = useState<Record<string, boolean>>({});
+  const [sel, setSel] = useState<Sel>({});
   const [qty, setQty] = useState(1);
 
   useEffect(() => {
     if (entry) {
-      setMods(entry.mods);
+      setSel(entry.sel);
       setQty(entry.qty);
     }
   }, [entry?.key]);
 
   if (!entry) return null;
   const item = entry.item;
-  const u = unitTotals(item, mods);
+  const u = unitTotals(item, sel);
   const parts = item.modifiers.filter((m) => m.kind === 'part');
   const addons = item.modifiers.filter((m) => m.kind === 'addon');
 
-  const toggle = (name: string, def: boolean) => setMods((m) => ({ ...m, [name]: !(m[name] ?? def) }));
+  const toggle = (name: string) =>
+    setSel((s) => {
+      const n = { ...s };
+      if (n[name]) delete n[name];
+      else n[name] = 'normal';
+      return n;
+    });
+  const setLevel = (name: string, lvl: Level) => setSel((s) => ({ ...s, [name]: lvl }));
+
   const Row = (m: ItemModifier, last: boolean) => {
-    const on = modOn(m, mods);
+    const lvl = sel[m.name];
+    const on = !!lvl;
     return (
       <View key={m.name} style={{ flexDirection: 'row', alignItems: 'center', gap: Space[2.5], paddingVertical: Space[2.5], borderBottomWidth: last ? 0 : 1, borderBottomColor: t.hairline }}>
-        <Checkbox checked={on} onToggle={() => toggle(m.name, m.default_on)} size={22} />
+        <Checkbox checked={on} onToggle={() => toggle(m.name)} size={22} />
         <T w={700} size={FontSize.body} color={on ? t.text : t.text3} numberOfLines={1} style={{ flex: 1 }}>
           {m.kind === 'addon' && !on ? `Add ${m.name}` : m.name}
         </T>
-        <T num w={700} size={FontSize.meta} color={on ? t.text2 : t.text3}>
-          {m.kcal > 0 ? `${m.kind === 'addon' ? '+' : ''}${Math.round(m.kcal)}` : ''}
+        {on ? <LevelPick value={lvl} onChange={(l) => setLevel(m.name, l)} /> : null}
+        <T num w={700} size={FontSize.meta} color={on ? t.text2 : t.text3} style={{ width: 44, textAlign: 'right' }}>
+          {m.kcal > 0 ? `${m.kind === 'addon' ? '+' : ''}${Math.round(m.kcal * (on ? MULT[lvl] : 1))}` : ''}
         </T>
       </View>
     );
@@ -563,14 +625,72 @@ function CustomizeSheet({ entry, onClose, onCommit }: { entry: TrayEntry | null;
           <View style={{ marginBottom: Space[3] }}>{addons.map((m, i) => Row(m, i === addons.length - 1))}</View>
         </>
       ) : null}
-      {!item.modifiers.length ? (
+      {item.modifiers.length ? (
+        <T w={600} size={FontSize.caption} color={t.text3} style={{ marginBottom: Space[3] }}>
+          L = half · E = double a portion.
+        </T>
+      ) : (
         <T w={600} size={FontSize.meta} color={t.text3} style={{ marginBottom: Space[3] }}>
           No breakdown for this one — log it as-is, or adjust the quantity.
         </T>
-      ) : null}
+      )}
 
-      <Button full size="lg" icon="check" onPress={() => onCommit({ ...entry, mods, qty })}>
+      <Button full size="lg" icon="check" onPress={() => onCommit({ ...entry, sel, qty })}>
         Add to order
+      </Button>
+    </Sheet>
+  );
+}
+
+// Save the current order tray as a named favorite food, so it shows under "Saved orders".
+function SaveFavoriteSheet({
+  visible,
+  defaultName,
+  restaurant,
+  totals,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  defaultName: string;
+  restaurant: string;
+  totals: Totals;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState('');
+  useEffect(() => {
+    if (visible) setName(defaultName);
+  }, [visible, defaultName]);
+
+  const save = useMutation({
+    mutationFn: () => {
+      const grams = totals.grams > 0 ? Math.round(totals.grams) : 100;
+      return api.foods.create({
+        name: name.trim() || `${restaurant} order`,
+        restaurant,
+        eating_out: 1,
+        source: 'dining',
+        serving_g: grams,
+        unit_name: 'order',
+        is_favorite: 1,
+        kcal_100g: Math.round((totals.kcal / grams) * 100),
+        protein_100g: Math.round((totals.protein / grams) * 1000) / 10,
+        carb_100g: Math.round((totals.carb / grams) * 1000) / 10,
+        fat_100g: Math.round((totals.fat / grams) * 1000) / 10,
+      } as any);
+    },
+    onSuccess: onSaved,
+    onError: () => showToast('Couldn’t save the order — try again', { kind: 'error' }),
+    meta: { suppressErrorToast: true },
+  });
+
+  if (!visible) return null;
+  return (
+    <Sheet visible={visible} onClose={onClose} title="Save as a favorite">
+      <TextField label="Name this order" value={name} onChangeText={setName} placeholder="e.g. Usual burrito bowl" autoFocus />
+      <Button full size="lg" icon="star" onPress={() => save.mutate()}>
+        {save.isPending ? 'Saving…' : 'Save favorite'}
       </Button>
     </Sheet>
   );
