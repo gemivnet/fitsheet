@@ -126,8 +126,41 @@ export const Font = {
 export type FontWeight = keyof typeof Font;
 
 // ── Scale tokens (theme.jsx: space / radius) ───────────────────────────────
-export const Space = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 8: 32, 10: 40 } as const;
+// The half-steps (1.5/2.5/3.5/4.5/7) exist so every spacing value already in the screens has a
+// token — adopting a token is a no-op visually. Prefer a whole rung for new work.
+export const Space = {
+  1: 4,
+  1.5: 6,
+  2: 8,
+  2.5: 10,
+  3: 12,
+  3.5: 14,
+  4: 16,
+  4.5: 18,
+  5: 20,
+  6: 24,
+  7: 28,
+  8: 32,
+  10: 40,
+} as const;
 export const Radius = { sm: 10, chip: 14, card: 20, pill: 999 } as const;
+
+// ── Type scale — semantic names mapped to the px sizes already in use ───────
+// Feed these to <T size={…}> (T's size stays a plain number). Keeps the type ramp consistent.
+export const FontSize = {
+  micro: 10, // tiny tags (e.g. "AUTO")
+  caption: 12, // captions, helper text
+  label: 13, // SectionLabel, small button text
+  meta: 14, // secondary rows, chips
+  body: 15, // body copy
+  input: 16, // input + default text
+  subtitle: 18, // list titles
+  title: 22, // card headline / section title
+  h2: 26, // screen subtitle
+  h1: 30, // screen title
+  display: 34, // big number (day total)
+  hero: 40, // celebration KPI / onboarding mark
+} as const;
 
 // Tabular numerals (the design's .fs-num) — keeps figures from jittering as they animate.
 export const tnum: TextStyle = { fontVariant: ['tabular-nums'] };

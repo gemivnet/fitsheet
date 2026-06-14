@@ -19,6 +19,8 @@ export { CalorieRing } from './CalorieRing';
 export { WeightChart, type WeightPoint } from './WeightChart';
 export { CelebrationModal, Confetti } from './Celebration';
 export { Screen } from './Screen';
+export { ScreenHeader } from './ScreenHeader';
+export { Checkbox } from './Checkbox';
 export { TextField, Sheet } from './forms';
 export { AutocompleteField } from './AutocompleteField';
 export { NumberPad, NumberField, useNumberField, applyNumberKey } from './NumberPad';

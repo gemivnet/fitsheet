@@ -3,7 +3,7 @@
 
 import React from 'react';
 import { Pressable, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
-import { Font, tnum, useTheme, type FontWeight, type Theme } from '../theme';
+import { Font, FontSize, Radius, tnum, useTheme, type FontWeight, type Theme } from '../theme';
 import { Icon, type IconName } from './Icon';
 
 type Macro = 'pro' | 'carb' | 'fat';
@@ -53,7 +53,7 @@ export function Card({
 }) {
   const t = useTheme();
   const body = (
-    <View style={[{ backgroundColor: t.surface, borderRadius: 20, padding: pad }, t.shadow, style]}>{children}</View>
+    <View style={[{ backgroundColor: t.surface, borderRadius: Radius.card, padding: pad }, t.shadow, style]}>{children}</View>
   );
   if (!onPress) return body;
   return (
@@ -66,7 +66,7 @@ export function Card({
 export function SectionLabel({ children, style }: { children: React.ReactNode; style?: StyleProp<TextStyle> }) {
   const t = useTheme();
   return (
-    <Text style={[{ fontFamily: Font[800], fontSize: 13, letterSpacing: 0.7, textTransform: 'uppercase', color: t.text3 }, style]}>
+    <Text style={[{ fontFamily: Font[800], fontSize: FontSize.label, letterSpacing: 0.7, textTransform: 'uppercase', color: t.text3 }, style]}>
       {children}
     </Text>
   );
