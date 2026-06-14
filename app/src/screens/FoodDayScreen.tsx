@@ -3,6 +3,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -29,6 +30,7 @@ type Props = NativeStackScreenProps<FoodStackParams, 'FoodDay'>;
 export function FoodDayScreen({ navigation }: Props) {
   const t = useTheme();
   const qc = useQueryClient();
+  const insets = useSafeAreaInsets();
   const [date, setDate] = useState(todayStr());
   const [editing, setEditing] = useState<LogEntry | null>(null);
   const day = useQuery({ queryKey: ['foodlog', date], queryFn: () => api.foodLog.day(date) });
@@ -187,7 +189,7 @@ export function FoodDayScreen({ navigation }: Props) {
           {
             position: 'absolute',
             right: 22,
-            bottom: 26,
+            bottom: 26 + insets.bottom,
             width: 60,
             height: 60,
             borderRadius: 999,

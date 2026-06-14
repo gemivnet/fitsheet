@@ -10,7 +10,7 @@ import { api, fileUrl, type WeightEntry } from '../lib/api';
 import { confirmAction } from '../lib/dialog';
 import { addDaysStr, prettyDate, todayStr } from '../lib/date';
 import { fmtWeight, fromDisplayWeight, type Units } from '../lib/units';
-import { useTheme } from '../theme';
+import { FontSize, Radius, useTheme } from '../theme';
 import type { WeightStackParams } from '../navigation/types';
 
 const RANGE_DAYS: Record<string, number> = { '1M': 30, '3M': 90, '6M': 180, All: 100000 };
@@ -146,11 +146,22 @@ export function WeightScreen() {
       </View>
       {photos.data && photos.data.length ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-          {photos.data.slice(0, 8).map((p) => (
-            <View key={p.id} style={{ width: '22.5%', aspectRatio: 3 / 4, borderRadius: 14, overflow: 'hidden', backgroundColor: t.surface2 }}>
-              <Image source={{ uri: fileUrl(`/api/weight-photos/${p.id}/file`) }} style={{ width: '100%', height: '100%' }} />
-            </View>
-          ))}
+          {photos.data.slice(0, 8).map((p, i) => {
+            const extra = photos.data!.length - 8;
+            const isLast = i === 7 && extra > 0;
+            return (
+              <View key={p.id} style={{ width: '22.5%', aspectRatio: 3 / 4, borderRadius: Radius.chip, overflow: 'hidden', backgroundColor: t.surface2 }}>
+                <Image source={{ uri: fileUrl(`/api/weight-photos/${p.id}/file`) }} style={{ width: '100%', height: '100%' }} />
+                {isLast ? (
+                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' }}>
+                    <T w={800} size={FontSize.body} color="#fff">
+                      +{extra + 1}
+                    </T>
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
         </View>
       ) : (
         <T w={600} size={14} color={t.text3} style={{ marginBottom: 20 }}>

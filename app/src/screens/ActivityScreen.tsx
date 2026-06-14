@@ -257,10 +257,10 @@ function Walks() {
                 <Icon name="walk" size={24} color={t.accentPress} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <T w={800} size={16}>
+                <T w={800} size={16} numberOfLines={1} style={{ flexShrink: 1 }}>
                   {p.label}
                 </T>
-                <T num w={700} size={13} color={t.text3}>
+                <T num w={700} size={13} color={t.text3} numberOfLines={1}>
                   {[miles != null ? `${miles} mi` : null, minutes != null ? `~${minutes} min` : null, kcal > 0 ? `~${kcal} kcal` : null].filter(Boolean).join(' · ') || 'tap to log'}
                 </T>
               </View>
