@@ -10,9 +10,11 @@ export function seedDefaults(db: DB): void {
   const ts = nowIso();
   if (count(db, 'walk_presets') === 0) {
     const ins = db.prepare('INSERT INTO walk_presets (label,default_minutes,default_distance,sort_order,created_at) VALUES (?,?,?,?,?)');
-    ins.run('Regular walk', 30, null, 0, ts);
-    ins.run('Long loop', 50, null, 1, ts);
+    ins.run('Regular walk', 30, 1.4, 0, ts); // ~30 min at her usual pace
+    ins.run('Long loop', 45, 2.2, 1, ts); // her 2.2 mi loop, ~45 min
   }
+  // existing installs: make sure the Long loop carries its real distance (idempotent backfill)
+  db.prepare('UPDATE walk_presets SET default_distance = 2.2, default_minutes = 45 WHERE label = ? AND default_distance IS NULL').run('Long loop');
 }
 
 export function resetData(db: DB): void {

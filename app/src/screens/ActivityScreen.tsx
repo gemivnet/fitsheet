@@ -1,13 +1,14 @@
 // ActivityScreen.tsx — Workouts (plan / open link / complete / ad-hoc) + Walks (preset one-tap / manual).
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Chip, EmptyState, Icon, Screen, SectionLabel, SegmentedControl, Sheet, showToast, T, TextField } from '../components';
-import { api, type WalkPreset, type Workout } from '../lib/api';
+import { api, type WalkLog, type WalkPreset, type Workout } from '../lib/api';
 import { confirmAction } from '../lib/dialog';
-import { addDaysStr, prettyDate, todayStr } from '../lib/date';
+import { estWalkKcal, estWalkMinutes } from '../lib/activity';
+import { addDaysStr, isToday, prettyDate, todayStr } from '../lib/date';
 import { useTheme } from '../theme';
 
 export function ActivityScreen() {
@@ -208,80 +209,146 @@ function WorkoutForm({
   );
 }
 
+// distance/minutes for a preset, filling in whichever wasn't set from the other.
+function presetMetrics(p: WalkPreset): { miles: number | null; minutes: number | null } {
+  const miles = p.default_distance ?? null;
+  const minutes = p.default_minutes ?? (miles != null ? estWalkMinutes(miles) : null);
+  return { miles, minutes };
+}
+
 function Walks() {
   const t = useTheme();
   const qc = useQueryClient();
   const presets = useQuery({ queryKey: ['walks', 'presets'], queryFn: api.walks.presets });
   const log = useQuery({ queryKey: ['walks', 'log'], queryFn: () => api.walks.log(addDaysStr(todayStr(), -30), todayStr()) });
+  const goal = useQuery({ queryKey: ['weight', 'goal'], queryFn: api.weight.goal });
   useFocusEffect(useCallback(() => void log.refetch(), [log.refetch]));
   const [manual, setManual] = useState(false);
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['walks', 'log'] });
+  const weightLb = goal.data?.current_raw ?? goal.data?.current_trend ?? goal.data?.start ?? 160;
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['walks', 'log'] });
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
+  };
   const quick = useMutation({ mutationFn: (p: WalkPreset) => api.walks.quick(p.id), onSuccess: invalidate });
   const removeWalk = useMutation({ mutationFn: (id: number) => api.walks.removeLog(id), onSuccess: invalidate });
+
+  // group the recent log by day, newest first, with a per-day summary
+  const days = useMemo(() => {
+    const byDay = new Map<string, WalkLog[]>();
+    for (const w of log.data ?? []) (byDay.get(w.walk_date) ?? byDay.set(w.walk_date, []).get(w.walk_date)!).push(w);
+    return [...byDay.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  }, [log.data]);
 
   return (
     <View>
       <SectionLabel style={{ marginBottom: 10 }}>Tap to log a walk</SectionLabel>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
-        {presets.data?.map((p) => (
-          <Chip key={p.id} icon="walk" onPress={() => quick.mutate(p)}>
-            {p.label}
-            {p.default_minutes ? ` · ${p.default_minutes}m` : ''}
-          </Chip>
-        ))}
-        <Chip icon="plus" soft={t.accentSoft} color={t.accentPress} onPress={() => setManual(true)}>
-          Manual
-        </Chip>
+      <View style={{ gap: 10, marginBottom: 20 }}>
+        {presets.data?.map((p) => {
+          const { miles, minutes } = presetMetrics(p);
+          const kcal = estWalkKcal({ miles, minutes, weightLb });
+          return (
+            <Pressable
+              key={p.id}
+              onPress={() => quick.mutate(p)}
+              style={[{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 16, backgroundColor: t.surface }, t.shadowSm]}
+            >
+              <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: t.accentSofter, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="walk" size={24} color={t.accentPress} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <T w={800} size={16}>
+                  {p.label}
+                </T>
+                <T num w={700} size={13} color={t.text3}>
+                  {[miles != null ? `${miles} mi` : null, minutes != null ? `~${minutes} min` : null, kcal > 0 ? `~${kcal} kcal` : null].filter(Boolean).join(' · ') || 'tap to log'}
+                </T>
+              </View>
+              <View style={{ width: 36, height: 36, borderRadius: 999, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="plus" size={20} stroke={2.8} color="#fff" />
+              </View>
+            </Pressable>
+          );
+        })}
+        <Pressable onPress={() => setManual(true)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12 }}>
+          <Icon name="plus" size={16} stroke={2.6} color={t.accentPress} />
+          <T w={800} size={14} color={t.accentPress}>
+            Log a different walk
+          </T>
+        </Pressable>
       </View>
 
       <SectionLabel style={{ marginBottom: 10 }}>Recent</SectionLabel>
-      {log.data && log.data.length ? (
-        <Card pad={6}>
-          {log.data.slice(0, 12).map((w, i) => (
-            <Pressable
-              key={w.id}
-              onLongPress={() => confirmAction('Remove this walk?', `${w.label ?? 'Walk'} · ${prettyDate(w.walk_date)}`, () => removeWalk.mutate(w.id), { confirmText: 'Remove', destructive: true })}
-              delayLongPress={300}
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderBottomWidth: i === Math.min(11, log.data!.length - 1) ? 0 : 1, borderBottomColor: t.hairline }}
-            >
-              <View>
-                <T w={800} size={15}>
-                  {w.label ?? 'Walk'}
+      {days.length ? (
+        days.map(([date, walks]) => {
+          const totMin = walks.reduce((a, w) => a + (w.minutes ?? 0), 0);
+          const totMi = walks.reduce((a, w) => a + (w.distance ?? 0), 0);
+          const totKcal = walks.reduce((a, w) => a + estWalkKcal({ miles: w.distance, minutes: w.minutes, weightLb }), 0);
+          return (
+            <View key={date} style={{ marginBottom: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6, marginLeft: 2 }}>
+                <T w={800} size={14}>
+                  {isToday(date) ? 'Today' : prettyDate(date)}
                 </T>
-                <T w={700} size={13} color={t.text3}>
-                  {prettyDate(w.walk_date)}
+                <T num w={700} size={12} color={t.text3}>
+                  {[totMi > 0 ? `${Math.round(totMi * 10) / 10} mi` : null, totMin > 0 ? `${totMin} min` : null, totKcal > 0 ? `~${totKcal} kcal` : null].filter(Boolean).join(' · ')}
                 </T>
               </View>
-              <T num w={700} size={14} color={t.text2}>
-                {w.minutes ? `${w.minutes} min` : ''}
-                {w.distance ? `  ${w.distance} mi` : ''}
-              </T>
-            </Pressable>
-          ))}
-        </Card>
+              <Card pad={6}>
+                {walks.map((w, i) => {
+                  const kcal = estWalkKcal({ miles: w.distance, minutes: w.minutes, weightLb });
+                  return (
+                    <Pressable
+                      key={w.id}
+                      onLongPress={() => confirmAction('Remove this walk?', `${w.label ?? 'Walk'} · ${prettyDate(w.walk_date)}`, () => removeWalk.mutate(w.id), { confirmText: 'Remove', destructive: true })}
+                      delayLongPress={300}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: 12, borderBottomWidth: i === walks.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                        <Icon name="walk" size={18} color={t.text3} />
+                        <T w={700} size={15} numberOfLines={1} style={{ flex: 1 }}>
+                          {w.label ?? 'Walk'}
+                          {w.distance ? ` · ${w.distance} mi` : ''}
+                        </T>
+                      </View>
+                      <T num w={700} size={13} color={t.text2}>
+                        {[w.minutes ? `${w.minutes} min` : null, kcal > 0 ? `~${kcal} kcal` : null].filter(Boolean).join(' · ')}
+                      </T>
+                    </Pressable>
+                  );
+                })}
+              </Card>
+            </View>
+          );
+        })
       ) : (
         <T w={600} size={14} color={t.text3}>
           No walks logged yet — tap a preset above.
         </T>
       )}
-      {log.data && log.data.length ? (
-        <T w={600} size={12} color={t.text3} style={{ textAlign: 'center', marginTop: 10 }}>
-          Long-press a walk to remove it.
+      {days.length ? (
+        <T w={600} size={12} color={t.text3} style={{ textAlign: 'center', marginTop: 4 }}>
+          Calories are an estimate from distance and your weight. Long-press a walk to remove it.
         </T>
       ) : null}
 
-      <ManualWalk visible={manual} onClose={() => setManual(false)} onSaved={invalidate} />
+      <ManualWalk visible={manual} weightLb={weightLb} onClose={() => setManual(false)} onSaved={invalidate} />
     </View>
   );
 }
 
-function ManualWalk({ visible, onClose, onSaved }: { visible: boolean; onClose: () => void; onSaved: () => void }) {
+function ManualWalk({ visible, weightLb, onClose, onSaved }: { visible: boolean; weightLb: number; onClose: () => void; onSaved: () => void }) {
+  const t = useTheme();
+  const [label, setLabel] = useState('');
   const [minutes, setMinutes] = useState('');
   const [distance, setDistance] = useState('');
   const [notes, setNotes] = useState('');
+  const mi = Number(distance) || 0;
+  const min = Number(minutes) || (mi > 0 ? estWalkMinutes(mi) : 0);
+  const kcal = estWalkKcal({ miles: mi, minutes: Number(minutes) || null, weightLb });
   const save = async () => {
-    await api.walks.manual({ label: 'Walk', minutes: minutes ? Number(minutes) : null, distance: distance ? Number(distance) : null, notes: notes || null });
+    await api.walks.manual({ label: label.trim() || 'Walk', minutes: minutes ? Number(minutes) : min || null, distance: distance ? Number(distance) : null, notes: notes || null });
+    setLabel('');
     setMinutes('');
     setDistance('');
     setNotes('');
@@ -290,8 +357,20 @@ function ManualWalk({ visible, onClose, onSaved }: { visible: boolean; onClose: 
   };
   return (
     <Sheet visible={visible} onClose={onClose} title="Add a walk">
-      <TextField label="Minutes" value={minutes} onChangeText={setMinutes} keyboardType="numeric" suffix="min" autoFocus />
-      <TextField label="Distance (optional)" value={distance} onChangeText={setDistance} keyboardType="numeric" suffix="mi" />
+      <TextField label="Name (optional)" value={label} onChangeText={setLabel} placeholder="e.g. Park loop" autoFocus />
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <TextField label="Distance" value={distance} onChangeText={setDistance} keyboardType="numeric" suffix="mi" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <TextField label="Minutes" value={minutes} onChangeText={setMinutes} keyboardType="numeric" suffix="min" />
+        </View>
+      </View>
+      {mi > 0 || Number(minutes) > 0 ? (
+        <T w={700} size={13} color={t.text2} style={{ marginTop: -4, marginBottom: 12 }}>
+          ≈ {min} min{kcal > 0 ? ` · ~${kcal} kcal burned` : ''}
+        </T>
+      ) : null}
       <TextField label="Notes (optional)" value={notes} onChangeText={setNotes} placeholder="Treadmill, outside loop…" />
       <Button full size="lg" icon="check" onPress={save}>
         Log walk
