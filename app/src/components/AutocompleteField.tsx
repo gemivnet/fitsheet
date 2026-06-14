@@ -21,6 +21,8 @@ export function AutocompleteField({
   fetchCompletion,
   onSubmit,
   minChars = 2,
+  showDropdown = false,
+  autoCapitalize = 'sentences',
 }: {
   value: string;
   onChangeText: (v: string) => void;
@@ -31,9 +33,13 @@ export function AutocompleteField({
   fetchCompletion?: (text: string) => Promise<string>;
   onSubmit?: () => void;
   minChars?: number;
+  /** show a tap-to-pick list of matching candidates below the field (e.g. saved restaurants). */
+  showDropdown?: boolean;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 }) {
   const t = useTheme();
   const [aiSuffix, setAiSuffix] = useState('');
+  const [focused, setFocused] = useState(false);
   const cache = useRef<Map<string, string>>(new Map());
   const fetchRef = useRef(fetchCompletion);
   fetchRef.current = fetchCompletion;
@@ -79,6 +85,11 @@ export function AutocompleteField({
   }, [v, localSuffix, minChars]);
 
   const suffix = aiSuffix || localSuffix;
+  // tap-to-pick list of saved candidates matching what she's typed (e.g. restaurants)
+  const matches =
+    showDropdown && focused && v.trim().length >= 1
+      ? candidates.filter((c) => c.toLowerCase().includes(lv) && c.toLowerCase() !== lv).slice(0, 6)
+      : [];
   const accept = () => {
     if (suffix) {
       onChangeText(value + suffix);
@@ -129,11 +140,12 @@ export function AutocompleteField({
           onChangeText={onChangeText}
           onKeyPress={onKeyPress}
           onSubmitEditing={() => (suffix ? accept() : onSubmit?.())}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
           placeholder={placeholder}
           placeholderTextColor={t.text3}
           autoFocus={autoFocus}
-          autoCorrect={false}
-          autoCapitalize="none"
+          autoCapitalize={autoCapitalize}
           returnKeyType="done"
           style={{ flex: 1, padding: 0, fontFamily: Font[700], fontSize: FZ, color: t.text, backgroundColor: 'transparent' }}
         />
@@ -145,6 +157,24 @@ export function AutocompleteField({
           </Pressable>
         ) : null}
       </View>
+      {matches.length ? (
+        <View style={{ marginTop: 4, backgroundColor: t.surface, borderWidth: 1, borderColor: t.hairline, borderRadius: 12, overflow: 'hidden' }}>
+          {matches.map((c, i) => (
+            <Pressable
+              key={c}
+              onPress={() => {
+                onChangeText(c);
+                setFocused(false);
+              }}
+              style={{ paddingVertical: 11, paddingHorizontal: 14, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: t.hairline }}
+            >
+              <T w={700} size={15}>
+                {c}
+              </T>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }

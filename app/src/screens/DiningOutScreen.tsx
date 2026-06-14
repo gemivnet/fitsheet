@@ -297,6 +297,8 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
         onChangeText={setRestaurant}
         placeholder="e.g. Chipotle, McDonald's"
         candidates={(restaurants.data ?? []).map((r) => r.restaurant)}
+        showDropdown
+        autoCapitalize="words"
       />
       {restaurants.data && restaurants.data.length ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: -4, marginBottom: 14 }}>

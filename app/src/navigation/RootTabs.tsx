@@ -102,7 +102,18 @@ export function RootTabs() {
       <Tab.Screen name="Food" component={FoodStack} />
       <Tab.Screen name="Weight" component={WeightStack} />
       <Tab.Screen name="Activity" component={ActivityScreen} />
-      <Tab.Screen name="More" component={MoreStack} />
+      <Tab.Screen
+        name="More"
+        component={MoreStack}
+        listeners={({ navigation }) => ({
+          // always land on the hub — otherwise the tab stays parked on whatever sub-screen
+          // (e.g. Marmalade's chat) was last opened inside the More stack.
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate('More', { screen: 'MoreHub' });
+          },
+        })}
+      />
     </Tab.Navigator>
   );
 }
