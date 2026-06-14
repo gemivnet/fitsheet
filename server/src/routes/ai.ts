@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import { generateCheckin } from '../ai/coach';
-import { generateMealPlan, type KeptMeal, type StoredPlan } from '../ai/mealplan';
+import { assembleStored, buildMealPlanContent, generateMealPlan, MEALPLAN_SYSTEM, type KeptMeal, type StoredPlan } from '../ai/mealplan';
+import { MealPlanSchema } from '../ai/schemas';
 import { getWeeklyGoals, saveWeeklyGoals, suggestWeeklyGoals } from '../ai/weeklyGoals';
 import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
 import { parseFoodPhoto } from '../ai/parseFoodPhoto';
 import { parseRecipe, parseRecipeFromUrl, parseRecipePdf } from '../ai/parseRecipe';
 import { restaurantHistory } from '../ai/personalContext';
-import { claudeStream } from '../ai/client';
+import { claudeStream, extractJson } from '../ai/client';
 import { complete } from '../ai/complete';
 import { generateDayInsights } from '../ai/dayInsights';
 import { type Anomaly, generateAnomalies } from '../ai/anomalies';
@@ -369,6 +370,44 @@ export function aiRouter(db: DB): Router {
       res.json({ plan });
     } catch (e) {
       aiFail(res, 'plan', e);
+    }
+  });
+
+  // streamed generation — meals pop in as the model writes them (SSE), then we persist the final plan
+  r.post('/meal-plan-stream', async (req, res) => {
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    const days = Math.max(1, Math.min(7, Number(req.body?.days) || 3));
+    const guidance = typeof req.body?.guidance === 'string' ? req.body.guidance : '';
+    const keepIds: string[] = Array.isArray(req.body?.keepIds) ? req.body.keepIds : [];
+    const date = isDayStr(req.body?.date) ? req.body.date : todayStr();
+    const saved = readBlob<StoredPlan>(db, 'meal_plan');
+    const keep: KeptMeal[] = [];
+    if (saved && keepIds.length) {
+      saved.days.forEach((d, dayIndex) => {
+        for (const m of d.meals) if (keepIds.includes(m.id)) keep.push({ dayIndex, meal: { ...m, locked: true } });
+      });
+    }
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+    const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
+    try {
+      const full = await claudeStream({ system: MEALPLAN_SYSTEM, content: buildMealPlanContent(db, { days, guidance, keep, date }), maxTokens: 3500, timeoutMs: 120_000, onText: (t) => send({ t }) });
+      const parsed = MealPlanSchema.safeParse(extractJson(full));
+      if (!parsed.success) {
+        console.warn('[ai] meal-plan stream failed validation:', parsed.error.issues.slice(0, 3));
+        send({ error: 'plan_failed' });
+      } else {
+        const plan = assembleStored(parsed.data.days, { days, guidance, keep, date });
+        writeBlob(db, 'meal_plan', plan);
+        send({ done: true, plan });
+      }
+    } catch (e) {
+      console.warn('[ai] meal-plan stream failed:', e);
+      send({ error: 'plan_failed' });
+    } finally {
+      res.end();
     }
   });
 

@@ -78,6 +78,11 @@ copying a saved `server/data/` folder back.
 
 ## Tech notes
 
+- **Stream anything that makes the user wait.** Any AI/generation that takes more than a moment
+  should show progress as it arrives, not a spinner — meals/items pop in as they're generated, text
+  types out, etc. Mirror the SSE pattern in `server/src/routes/ai.ts` (`*-stream` endpoints with
+  `claudeStream`) + the client reader in `app/src/screens/MealPlanScreen.tsx` / `DiningOutScreen.tsx`.
+  New AI features should stream by default and keep a non-streaming fallback.
 - Server uses Node's **built-in `node:sqlite`** (no native build needed; requires Node ≥ 22.5, and
   it's already what the Docker image uses). Run with `tsx` — no compile step.
 - The app is React Native rendered to the web via **`react-native-web`** (Expo SDK 56 tooling),

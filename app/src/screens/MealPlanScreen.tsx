@@ -6,7 +6,7 @@ import { Pressable, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Chip, Icon, NumberPad, Screen, SegmentedControl, Sheet, showToast, T, TextField, useNumberField } from '../components';
-import { api, type MealPlan, type PlannedMeal, type WeeklyGoal } from '../lib/api';
+import { api, apiBase, type MealPlan, type PlannedMeal, type WeeklyGoal } from '../lib/api';
 import { todayStr } from '../lib/date';
 import { useTheme } from '../theme';
 
@@ -26,14 +26,69 @@ export function MealPlanScreen() {
   const [guidance, setGuidance] = useState('');
   const [detail, setDetail] = useState<{ dayIdx: number; meal: PlannedMeal } | null>(null);
   const [addDay, setAddDay] = useState<number | null>(null);
+  const [streaming, setStreaming] = useState(false);
+  const [streamNames, setStreamNames] = useState<string[]>([]);
 
   const setPlan = (p: MealPlan | null) => qc.setQueryData(['meal-plan'], { plan: p });
-  const generate = useMutation({
-    mutationFn: () => api.ai.mealPlan.generate({ days: Number(days) || 7, guidance: guidance.trim(), keepIds: lockedIds(plan) }),
-    onSuccess: (out) => setPlan(out.plan),
-    meta: { suppressErrorToast: true },
-  });
   const save = useMutation({ mutationFn: (p: MealPlan) => api.ai.mealPlan.save(p), onSuccess: (out) => setPlan(out.plan) });
+
+  // Generate with live progress — meals pop in as Marmalade writes them, then the final plan saves.
+  const generate = async () => {
+    if (streaming) return;
+    const body = JSON.stringify({ days: Number(days) || 7, guidance: guidance.trim(), keepIds: lockedIds(plan) });
+    setStreaming(true);
+    setStreamNames([]);
+    try {
+      const res = await fetch(`${apiBase}/api/ai/meal-plan-stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+      if (res.status === 503) {
+        showToast('AI is off on the server', { kind: 'error' });
+        return;
+      }
+      const reader = (res as unknown as { body?: { getReader?: () => ReadableStreamDefaultReader<Uint8Array> } }).body?.getReader?.();
+      if (!reader) {
+        // browser can't read the stream — fall back to the plain endpoint
+        const out = await api.ai.mealPlan.generate({ days: Number(days) || 7, guidance: guidance.trim(), keepIds: lockedIds(plan) });
+        setPlan(out.plan);
+        return;
+      }
+      const dec = new TextDecoder();
+      let buf = '';
+      let text = '';
+      const seen = new Set<string>();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n\n');
+        buf = parts.pop() ?? '';
+        for (const part of parts) {
+          const line = part.replace(/^data:\s*/, '').trim();
+          if (!line) continue;
+          let msg: { t?: string; done?: boolean; plan?: MealPlan; error?: string };
+          try {
+            msg = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (typeof msg.t === 'string') {
+            text += msg.t;
+            for (const m of text.matchAll(/"name"\s*:\s*"([^"]+)"/g)) {
+              if (!seen.has(m[1])) {
+                seen.add(m[1]);
+                setStreamNames((a) => [...a, m[1]]);
+              }
+            }
+          }
+          if (msg.done && msg.plan) setPlan(msg.plan);
+          if (msg.error) showToast('Couldn’t plan that — try again', { kind: 'error' });
+        }
+      }
+    } catch {
+      showToast('Couldn’t plan that — try again', { kind: 'error' });
+    } finally {
+      setStreaming(false);
+    }
+  };
 
   // edits operate on the saved plan and persist the whole thing
   const mutateMeals = (dayIdx: number, fn: (meals: PlannedMeal[]) => PlannedMeal[]) => {
@@ -94,23 +149,35 @@ export function MealPlanScreen() {
           placeholder="e.g. scrambled eggs every other day instead of grits"
           multiline
         />
-        <Button full size="lg" icon="food" onPress={() => generate.mutate()}>
-          {generate.isPending ? 'Planning…' : plan ? (lockedCount ? `Regenerate (keep ${lockedCount} locked)` : 'Regenerate') : 'Generate plan'}
+        <Button full size="lg" icon="food" onPress={generate}>
+          {streaming ? 'Planning…' : plan ? (lockedCount ? `Regenerate (keep ${lockedCount} locked)` : 'Regenerate') : 'Generate plan'}
         </Button>
-        {plan ? (
+        {plan && !streaming ? (
           <T w={600} size={12} color={t.text3} style={{ marginTop: 8, textAlign: 'center' }}>
             Tap a meal to see it & log it · lock the keepers before you regenerate
           </T>
         ) : null}
       </Card>
 
-      {generate.isError ? (
-        <T w={700} color={t.caution} style={{ marginBottom: 14 }}>
-          Couldn&rsquo;t plan that — try again in a moment.
-        </T>
+      {/* live progress — meals pop in as they're generated */}
+      {streaming ? (
+        <Card pad={16} style={{ marginBottom: 16 }}>
+          <T w={800} size={14} style={{ marginBottom: streamNames.length ? 10 : 0 }}>
+            Marmalade is planning… {streamNames.length ? `${streamNames.length} meals so far` : ''}
+          </T>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {streamNames.map((n, i) => (
+              <View key={i} style={{ paddingVertical: 4, paddingHorizontal: 9, borderRadius: 999, backgroundColor: t.accentSoft }}>
+                <T w={700} size={12} color={t.accentPress}>
+                  {n}
+                </T>
+              </View>
+            ))}
+          </View>
+        </Card>
       ) : null}
 
-      {plan?.days?.length ? (
+      {!streaming && plan?.days?.length ? (
         plan.days.map((d, dayIdx) => {
           const total = dayKcal(d.meals);
           return (
@@ -154,7 +221,7 @@ export function MealPlanScreen() {
             </Card>
           );
         })
-      ) : !planQ.isLoading ? (
+      ) : !streaming && !planQ.isLoading ? (
         <T w={600} size={14} color={t.text2} style={{ lineHeight: 20 }}>
           No plan yet — set the days, add any instructions, and tap Generate. Meals come with ingredients and a quick method, and stay saved so you can tweak them.
         </T>

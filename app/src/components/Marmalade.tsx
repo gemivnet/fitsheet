@@ -144,6 +144,58 @@ export function Companion() {
     }
   }, [current?.id]);
 
+  // idle life — when she has nothing to say she naps, plays with a yarn ball, or just sits
+  const [activity, setActivity] = useState<'sit' | 'sleep' | 'play'>('sit');
+  const breathe = useRef(new Animated.Value(0)).current;
+  const ball = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (hasNews || idleLine) {
+      setActivity('sit');
+      return;
+    }
+    let live = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const rest = () => {
+      timer = setTimeout(
+        () => {
+          if (!live) return;
+          const roll = Math.random();
+          const next = roll < 0.4 ? 'sleep' : roll < 0.7 ? 'play' : 'sit';
+          setActivity(next);
+          timer = setTimeout(() => {
+            if (!live) return;
+            setActivity('sit');
+            rest();
+          }, next === 'sleep' ? 9000 : next === 'play' ? 4500 : 5000);
+        },
+        9000 + Math.random() * 9000,
+      );
+    };
+    rest();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [hasNews, idleLine]);
+  useEffect(() => {
+    if (activity === 'sleep') {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(breathe, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          Animated.timing(breathe, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        ]),
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+    if (activity === 'play') {
+      ball.setValue(0);
+      const loop = Animated.loop(Animated.timing(ball, { toValue: 1, duration: 640, easing: Easing.inOut(Easing.quad), useNativeDriver: true }));
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [activity, breathe, ball]);
+
   const dismiss = () => current && setDismissed((s) => new Set(s).add(current.id));
   const onTapCat = () => {
     if (hasNews) setOpen((o) => !o);
@@ -207,10 +259,32 @@ export function Companion() {
           </View>
         </View>
       ) : null}
-      <Animated.View style={{ transform: [{ translateY }], opacity: enter, marginLeft: 4 }}>
-        <Pressable onPress={onTapCat} hitSlop={8} accessibilityLabel="Marmalade the cat">
-          <CatSprite size={58} />
-        </Pressable>
+      <Animated.View style={{ opacity: enter, marginLeft: 4 }}>
+        <View style={{ width: 64 }}>
+          {/* napping — drifting Zzz */}
+          {activity === 'sleep' ? (
+            <Animated.View style={{ position: 'absolute', top: -8, right: 0, opacity: breathe.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }) }}>
+              <T w={800} size={13} color={t.text3}>
+                z z z
+              </T>
+            </Animated.View>
+          ) : null}
+          {/* playing — a yarn ball bouncing beside her */}
+          {activity === 'play' ? (
+            <Animated.View style={{ position: 'absolute', right: -8, bottom: 8, transform: [{ translateY: ball.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -18, 0] }) }] }}>
+              <View style={{ width: 12, height: 12, borderRadius: 999, backgroundColor: t.accent, borderWidth: 1.5, borderColor: t.accentPress }} />
+            </Animated.View>
+          ) : null}
+          <Animated.View
+            style={{
+              transform: [{ translateY }, { scale: activity === 'sleep' ? breathe.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) : 1 }],
+            }}
+          >
+            <Pressable onPress={onTapCat} hitSlop={8} accessibilityLabel="Marmalade the cat">
+              <CatSprite size={58} />
+            </Pressable>
+          </Animated.View>
+        </View>
       </Animated.View>
     </View>
   );
