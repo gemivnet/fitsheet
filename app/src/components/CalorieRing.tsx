@@ -1,26 +1,26 @@
-// CalorieRing.tsx — the hero. Ported from components.jsx; the arc animates as calories are logged.
+// CalorieRing.tsx — the hero. On web we draw it with Skia (gradient + glow, springy) once CanvasKit
+// has loaded; until then — and on any failure, or on native — we fall back to this SVG ring. The
+// fallback is the safety net: if the WASM never loads, the app still shows a perfectly good ring.
 
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
+import { WithSkiaWeb } from '@shopify/react-native-skia/lib/module/web';
 import { Font, tnum, useTheme } from '../theme';
 import { T } from './primitives';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-export function CalorieRing({
-  consumed,
-  goal,
-  size = 230,
-  stroke = 20,
-  label = 'remaining',
-}: {
+export interface CalorieRingProps {
   consumed: number;
   goal: number;
   size?: number;
   stroke?: number;
   label?: string;
-}) {
+}
+
+// The original SVG ring — kept as the fallback (and the only renderer on native).
+export function CalorieRingSvg({ consumed, goal, size = 230, stroke = 20, label = 'remaining' }: CalorieRingProps) {
   const t = useTheme();
   const pct = Math.max(0, Math.min(1.18, consumed / goal));
   const over = consumed > goal;
@@ -65,5 +65,31 @@ export function CalorieRing({
         </T>
       </View>
     </View>
+  );
+}
+
+// If the Skia chunk or CanvasKit fails to load for any reason, quietly show the SVG ring instead.
+class SkiaBoundary extends React.Component<{ fallback: React.ReactNode; children: React.ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+export function CalorieRing(props: CalorieRingProps) {
+  const fallback = <CalorieRingSvg {...props} />;
+  if (Platform.OS !== 'web') return fallback;
+  return (
+    <SkiaBoundary fallback={fallback}>
+      <WithSkiaWeb
+        getComponent={() => import('./CalorieRingSkia')}
+        fallback={fallback}
+        componentProps={props}
+        opts={{ locateFile: (file: string) => `/${file}` }}
+      />
+    </SkiaBoundary>
   );
 }

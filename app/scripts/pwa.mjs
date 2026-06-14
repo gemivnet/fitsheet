@@ -2,7 +2,7 @@
 // writes the web manifest + a small service worker, and injects PWA/Apple meta into index.html.
 // Result: open the site in Safari/Chrome → "Add to Home Screen" → fullscreen app.
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
@@ -82,6 +82,20 @@ function smooth(v, e0, e1) {
 writeFileSync(join(DIST, 'icon-512.png'), encodePNG(512, 512, drawIcon(512)));
 writeFileSync(join(DIST, 'icon-180.png'), encodePNG(180, 180, drawIcon(180)));
 console.log('[pwa] wrote icon-512.png, icon-180.png');
+
+// ── Skia/CanvasKit WASM ───────────────────────────────────────────────────────
+// The Skia calorie ring loads CanvasKit at runtime; ship the .wasm at the site root so
+// LoadSkiaWeb's locateFile (/canvaskit.wasm) finds it. The service worker caches it like the rest
+// of the shell, so the Skia ring keeps working offline after the first visit. If it's ever missing
+// the ring falls back to SVG, so this copy is a nicety, not a hard dependency.
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const wasmSrc = join(ROOT, 'node_modules', 'canvaskit-wasm', 'bin', 'full', 'canvaskit.wasm');
+if (existsSync(wasmSrc)) {
+  copyFileSync(wasmSrc, join(DIST, 'canvaskit.wasm'));
+  console.log('[pwa] copied canvaskit.wasm');
+} else {
+  console.warn('[pwa] canvaskit.wasm not found — the calorie ring will use its SVG fallback.');
+}
 
 // ── manifest ────────────────────────────────────────────────────────────────
 const manifest = {
