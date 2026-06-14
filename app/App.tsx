@@ -8,6 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { DarkTheme, DefaultTheme, NavigationContainer, type Theme as NavTheme } from '@react-navigation/native';
 import { QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import {
   Nunito_400Regular,
   Nunito_500Medium,
@@ -19,11 +20,11 @@ import {
 } from '@expo-google-fonts/nunito';
 import { ThemeProvider, useTheme } from './src/theme';
 import { RootTabs } from './src/navigation/RootTabs';
-import { Companion, ReminderSync, T, ToastHost } from './src/components';
+import { Companion, OfflineBanner, ReminderSync, T, ToastHost } from './src/components';
 import { OnboardingScreen } from './src/screens';
 import { navigationRef } from './src/navigation/ref';
 import { api } from './src/lib/api';
-import { queryClient } from './src/lib/query';
+import { persister, queryClient } from './src/lib/query';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -47,18 +48,32 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClient}>
+      <DataProvider>
         <SafeAreaProvider>
           <ThemeProvider>
             <Gate />
             <ReminderSync />
             <ToastHost />
+            <OfflineBanner />
             <StatusBar style={dark ? 'light' : 'dark'} />
           </ThemeProvider>
         </SafeAreaProvider>
-      </QueryClientProvider>
+      </DataProvider>
     </GestureHandlerRootView>
   );
+}
+
+// On web we persist the read cache to localStorage (instant opens + offline viewing); on a
+// platform without localStorage there's no persister, so we fall back to the plain provider.
+function DataProvider({ children }: { children: React.ReactNode }) {
+  if (persister) {
+    return (
+      <PersistQueryClientProvider client={queryClient} persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 }}>
+        {children}
+      </PersistQueryClientProvider>
+    );
+  }
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 
 function Gate() {

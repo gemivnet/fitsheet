@@ -1,4 +1,6 @@
 import { MutationCache, QueryClient } from '@tanstack/react-query';
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+import type { Persister } from '@tanstack/react-query-persist-client';
 import { showToast } from '../components/Toast';
 
 // One friendly line per failure class — every mutation in the app gets this for free.
@@ -12,7 +14,9 @@ function friendly(err: unknown): string {
 
 export const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { retry: 1, staleTime: 10_000, refetchOnWindowFocus: false },
+    // gcTime ≥ the persist maxAge so cached reads survive long enough to be written to
+    // localStorage and restored on the next open (instant load + offline viewing).
+    queries: { retry: 1, staleTime: 10_000, gcTime: 1000 * 60 * 60 * 24, refetchOnWindowFocus: false },
   },
   mutationCache: new MutationCache({
     onError: (err, _vars, _ctx, mutation) => {
@@ -21,3 +25,11 @@ export const queryClient = new QueryClient({
     },
   }),
 });
+
+// Persist the read cache to localStorage on web so the app opens with last-known data and
+// stays viewable offline. Native has no localStorage → no persister (PersistQueryClientProvider
+// falls back to a plain provider when persister is undefined).
+export const persister: Persister | undefined =
+  typeof window !== 'undefined' && window.localStorage
+    ? createSyncStoragePersister({ storage: window.localStorage, key: 'fitsheet-cache' })
+    : undefined;
