@@ -595,9 +595,7 @@ function Stat({ label, value, muted }: { label: string; value: number; muted?: b
   const t = useTheme();
   return (
     <View>
-      <T w={800} size={13} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6 }}>
-        {label}
-      </T>
+      <SectionLabel>{label}</SectionLabel>
       <T num w={800} size={26} color={muted ? t.text2 : t.text}>
         {value}
       </T>

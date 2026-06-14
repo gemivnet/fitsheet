@@ -67,9 +67,7 @@ export function OnboardingScreen() {
       <Card style={{ marginBottom: 16 }}>
         <SectionLabel style={{ marginBottom: 14 }}>About you</SectionLabel>
         <TextField label="What should we call you?" value={name} onChangeText={setName} placeholder="Your name" />
-        <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
-          Units
-        </T>
+        <SectionLabel style={{ marginBottom: 6 }}>Units</SectionLabel>
         <View style={{ marginBottom: 4 }}>
           <SegmentedControl
             options={['lb', 'kg']}

@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, EmptyState, Icon, NumberPad, Screen, ScreenHeader, SegmentedControl, Sheet, showToast, T, TextField, useNumberField } from '../components';
+import { Button, Card, Chip, EmptyState, Icon, NumberPad, Screen, ScreenHeader, SectionLabel, SegmentedControl, Sheet, showToast, T, TextField, useNumberField } from '../components';
 import { api, apiBase, type MealPlan, type PlannedMeal } from '../lib/api';
 import { todayStr } from '../lib/date';
 import { useTheme } from '../theme';
@@ -127,9 +127,7 @@ export function MealPlanScreen() {
 
       {/* controls */}
       <Card pad={16} style={{ marginBottom: 16 }}>
-        <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>
-          Days
-        </T>
+        <SectionLabel style={{ marginBottom: 8 }}>Days</SectionLabel>
         <View style={{ marginBottom: 12 }}>
           <SegmentedControl options={['3', '5', '7']} value={days} onChange={setDays} />
         </View>
@@ -203,7 +201,7 @@ export function MealPlanScreen() {
                   </Pressable>
                 </View>
               ))}
-              <Pressable onPress={() => setAddDay(dayIdx)} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingTop: 10 }}>
+              <Pressable onPress={() => setAddDay(dayIdx)} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingTop: 10, paddingBottom: 4 }}>
                 <Icon name="plus" size={15} stroke={2.6} color={t.accentPress} />
                 <T w={800} size={13} color={t.accentPress}>
                   Add a meal
@@ -272,9 +270,7 @@ function MealDetailSheet({
       </T>
       {m.ingredients?.length ? (
         <>
-          <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
-            Ingredients
-          </T>
+          <SectionLabel style={{ marginBottom: 6 }}>Ingredients</SectionLabel>
           <View style={{ marginBottom: 14 }}>
             {m.ingredients.map((ing, i) => (
               <T key={i} w={600} size={15} color={t.text2} style={{ lineHeight: 22 }}>
@@ -286,9 +282,7 @@ function MealDetailSheet({
       ) : null}
       {m.steps ? (
         <>
-          <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
-            How to make it
-          </T>
+          <SectionLabel style={{ marginBottom: 6 }}>How to make it</SectionLabel>
           <T w={600} size={15} color={t.text2} style={{ lineHeight: 22, marginBottom: 16 }}>
             {m.steps}
           </T>
@@ -339,9 +333,7 @@ function AddMealSheet({ dayIdx, onClose, onAdd }: { dayIdx: number | null; onClo
   return (
     <Sheet visible={dayIdx != null} onClose={onClose} title="Add a meal">
       <TextField label="What is it?" value={name} onChangeText={setName} placeholder="e.g. Greek yogurt + berries" autoFocus />
-      <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>
-        Meal
-      </T>
+      <SectionLabel style={{ marginBottom: 8 }}>Meal</SectionLabel>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
         {SLOTS.map((s) => (
           <Chip key={s} active={slot === s} onPress={() => setSlot(s)}>

@@ -430,9 +430,7 @@ export function DiningOutTab({ slot, date, goDay }: { slot: string; date: string
 
           {groups.map((g) => (
             <View key={g.cat} style={{ marginBottom: 10 }}>
-              <T w={800} size={11} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6, marginLeft: 4 }}>
-                {g.cat}
-              </T>
+              <SectionLabel style={{ marginBottom: 6, marginLeft: 4 }}>{g.cat}</SectionLabel>
               <Card pad={6}>
                 {g.items.map((c, i) => {
                   const lvl = sel[c.id];
@@ -628,9 +626,7 @@ function EditComponentSheet({
   return (
     <Sheet visible={!!editing} onClose={onClose} title={existing ? 'Edit item' : 'Add menu item'}>
       <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Guacamole" autoFocus={!existing} />
-      <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>
-        Category
-      </T>
+      <SectionLabel style={{ marginBottom: 8 }}>Category</SectionLabel>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 14 }}>
         {CAT_ORDER.map((c) => (
           <Chip key={c} active={category === c} onPress={() => setCategory(c)}>

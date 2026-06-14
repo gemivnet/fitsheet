@@ -154,9 +154,7 @@ function Metric({ label, value, sub, topic }: { label: string; value: string; su
   return (
     <Card pad={18} style={{ flex: 1 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-        <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6 }}>
-          {label}
-        </T>
+        <SectionLabel>{label}</SectionLabel>
         {topic ? <InfoDot topic={topic} /> : null}
       </View>
       <T num w={800} size={28}>

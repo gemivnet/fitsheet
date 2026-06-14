@@ -955,9 +955,7 @@ function AmountSheet({
       {/* piece editor — name it ("sausage") + how many grams one weighs; remembered on the food */}
       {showPieceEditor ? (
         <>
-          <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
-            Size of one piece (remembered)
-          </T>
+          <SectionLabel style={{ marginBottom: 6 }}>Size of one piece (remembered)</SectionLabel>
           <View
             style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, marginBottom: 12, backgroundColor: field === 'piece' ? t.accentSoft : t.surface2, borderWidth: 1.5, borderColor: field === 'piece' ? t.accent : t.hairline }}
           >

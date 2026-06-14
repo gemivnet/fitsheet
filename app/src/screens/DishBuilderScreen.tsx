@@ -216,7 +216,7 @@ export function DishBuilderTab({ slot, date, goDay }: { slot: string; date: stri
         <Card pad={20} style={{ marginBottom: 16, backgroundColor: t.accentSofter }}>
           <SectionLabel>You ate</SectionLabel>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
-            <T num w={800} size={40} color={t.accentPress}>
+            <T num w={800} size={40} color={t.accentPress} numberOfLines={1} style={{ flexShrink: 1 }}>
               {ateKcal}
             </T>
             <T w={800} size={16} color={t.text2}>
@@ -369,9 +369,7 @@ function IngredientPicker({ visible, onClose, onAdd }: { visible: boolean; onClo
               <TextField label="Calories per 100 g" value={mKcal} onChangeText={setMKcal} keyboardType="numeric" suffix="kcal" />
             </>
           ) : null}
-          <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
-            Amount used
-          </T>
+          <SectionLabel style={{ marginBottom: 6 }}>Amount used</SectionLabel>
           <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderWidth: 1.5, borderColor: t.hairline, borderRadius: 13, paddingHorizontal: 14, marginBottom: 12 }}>
             <T num w={800} size={22} color={t.text} style={{ flex: 1, paddingVertical: 12 }}>
               {gramsPad.value || '0'}

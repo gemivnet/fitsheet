@@ -6,7 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, EmptyState, Icon, Screen, ScreenHeader, SegmentedControl, Sheet, showToast, T, TextField } from '../components';
+import { Button, Card, Chip, EmptyState, Icon, Screen, ScreenHeader, SectionLabel, SegmentedControl, Sheet, showToast, T, TextField } from '../components';
 import { api, fileUrl, type Recipe } from '../lib/api';
 import { appendImage } from '../lib/upload';
 import { confirmAction } from '../lib/dialog';
@@ -315,9 +315,7 @@ function RecipeForm({ visible, initial, onClose, onSaved }: { visible: boolean; 
     <Sheet visible={visible} onClose={onClose} title={editMode ? 'Edit recipe' : 'Add recipe'}>
       {!editMode ? (
         <>
-          <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
-            Import from
-          </T>
+          <SectionLabel style={{ marginBottom: 6 }}>Import from</SectionLabel>
           <View style={{ marginBottom: 12 }}>
             <SegmentedControl options={['text', 'link', 'pdf']} value={source} onChange={setSource} labels={{ text: 'Text', link: 'Link', pdf: 'PDF' }} />
           </View>
@@ -339,9 +337,7 @@ function RecipeForm({ visible, initial, onClose, onSaved }: { visible: boolean; 
       ) : null}
       <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Turkey chili" autoFocus={!editMode} />
       <TextField label="Approx calories" value={kcal} onChangeText={setKcal} keyboardType="numeric" suffix="kcal" />
-      <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
-        Cook time
-      </T>
+      <SectionLabel style={{ marginBottom: 6 }}>Cook time</SectionLabel>
       <View style={{ marginBottom: 14 }}>
         <SegmentedControl options={BAND_KEYS} value={band} onChange={setBand} labels={BANDS} />
       </View>

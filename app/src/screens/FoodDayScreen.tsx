@@ -8,7 +8,7 @@ import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BankLine, Button, Card, Checkbox, Chip, FoodRow, Icon, NumberPad, ProgressBar, RoundBtn, Screen, Sheet, showToast, T, useNumberField } from '../components';
+import { BankLine, Button, Card, Checkbox, Chip, FoodRow, Icon, NumberPad, ProgressBar, RoundBtn, Screen, SectionLabel, Sheet, showToast, T, useNumberField } from '../components';
 import { api, type LogEntry } from '../lib/api';
 import { confirmAction } from '../lib/dialog';
 import { addDaysStr, isToday, prettyDate, slotForNow, todayStr } from '../lib/date';
@@ -271,9 +271,7 @@ function LogItemSheet({
         <NumberPad onKey={grams.press} keyHeight={54} />
       </View>
 
-      <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>
-        Meal
-      </T>
+      <SectionLabel style={{ marginBottom: 8 }}>Meal</SectionLabel>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
         {SLOTS.map((s) => (
           <Chip key={s.key} active={slot === s.key} onPress={() => setSlot(s.key)}>

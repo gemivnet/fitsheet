@@ -129,9 +129,7 @@ export function SettingsScreen() {
             Calculate it for me
           </T>
         </Pressable>
-        <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
-          Units
-        </T>
+        <SectionLabel style={{ marginBottom: 6 }}>Units</SectionLabel>
         <View style={{ marginBottom: 14 }}>
           <SegmentedControl options={['lb', 'kg']} value={units} onChange={(o) => setUnits(o as Units)} />
         </View>
@@ -148,7 +146,7 @@ export function SettingsScreen() {
             <T w={700} size={15} color={t.text2}>
               Roll over calories (weekly bank)
             </T>
-            <T w={600} size={12} color={t.text3}>
+            <T w={600} size={12} color={t.text3} style={{ lineHeight: 17 }}>
               Eat under your goal and the spare calories roll into the rest of the week (up to ±800 a day); going over trims the next days a little. Tap Snooze on the ring to pause it for a day.
             </T>
           </View>
@@ -158,9 +156,7 @@ export function SettingsScreen() {
 
       <Card style={{ marginBottom: 16 }}>
         <SectionLabel style={{ marginBottom: 14 }}>Reminders</SectionLabel>
-        <T w={800} size={12} color={t.text3} style={{ textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>
-          Weigh-in day
-        </T>
+        <SectionLabel style={{ marginBottom: 8 }}>Weigh-in day</SectionLabel>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
           {DAYS.map((d, i) => (
             <Pressable
