@@ -22,8 +22,9 @@ export interface RestaurantItem {
   name: string;
   components: RestaurantComponent[];
   note?: string | null;
-  /** 'published' = reproduced from the chain's real nutrition; 'estimated' = the AI's best guess. */
-  confidence?: 'published' | 'estimated';
+  /** 'official' = grounded on the chain's web-sourced nutrition; 'published' = reproduced from the
+   * model's knowledge of real numbers; 'estimated' = best guess. */
+  confidence?: 'official' | 'published' | 'estimated';
 }
 
 // Pull every COMPLETE {…} object out of a (possibly truncated) JSON array. Streamed menus can get

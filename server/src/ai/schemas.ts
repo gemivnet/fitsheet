@@ -88,5 +88,31 @@ export const RestaurantItemSchema = z.object({
     }),
   ),
   note: z.string().nullable().catch(null),
-  confidence: z.enum(['published', 'estimated']).catch('estimated'),
+  confidence: z.enum(['official', 'published', 'estimated']).catch('estimated'),
 });
+
+// ── items-first dining ───────────────────────────────────────────────────────
+// A modifier is a part of an item ("Sesame Bun", "Beef Patty") or an optional add-on ("Add Bacon",
+// "Extra Cheese") with its own nutrition delta, so customizing an item = toggling modifiers.
+export const RestaurantModifierSchema = z.object({
+  name: z.string().min(1),
+  kind: z.enum(['part', 'addon']).catch('part'),
+  grams: numOr(0),
+  kcal: numOr(0),
+  protein_g: numOr(0),
+  carb_g: numOr(0),
+  fat_g: numOr(0),
+  default_on: z.boolean().catch(true),
+});
+export const RestaurantMenuItemSchema = z.object({
+  name: z.string().min(1),
+  category: z.string().catch('other'),
+  grams: numOr(0),
+  kcal: num,
+  protein_g: numOr(0),
+  carb_g: numOr(0),
+  fat_g: numOr(0),
+  modifiers: z.array(RestaurantModifierSchema).catch([]),
+  confidence: z.enum(['official', 'published', 'estimated']).catch('estimated'),
+});
+export const RestaurantMenuSchema = z.object({ items: z.array(RestaurantMenuItemSchema) });

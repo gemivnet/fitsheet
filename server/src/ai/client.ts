@@ -73,6 +73,49 @@ export async function claudeStream(opts: { system?: string; content: Content; ma
     .join('');
 }
 
+/**
+ * Research call: lets Claude use the server-side web_search + web_fetch tools (Anthropic runs them)
+ * to find + read a source — including PDFs, which web_fetch auto-extracts. Returns the final text
+ * plus any source URLs it touched (from the tool-result blocks). Not streamed: callers cache it.
+ */
+export async function claudeResearch(opts: {
+  system?: string;
+  content: Content;
+  maxTokens?: number;
+  model?: string;
+  timeoutMs?: number;
+  maxSearches?: number;
+  maxFetches?: number;
+}): Promise<{ text: string; sourceUrls: string[] }> {
+  // web_fetch is newer than the pinned SDK's typed tool union, so build the tools array loosely.
+  const tools = [
+    { type: 'web_search_20250305', name: 'web_search', max_uses: opts.maxSearches ?? 3 },
+    { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: opts.maxFetches ?? 3, citations: { enabled: true }, max_content_tokens: 60_000 },
+  ] as unknown as Anthropic.Messages.ToolUnion[];
+
+  const res = await client().messages.create(
+    {
+      model: opts.model ?? config.anthropicModel,
+      max_tokens: opts.maxTokens ?? 4000,
+      system: opts.system,
+      messages: [{ role: 'user', content: opts.content }],
+      tools,
+    },
+    opts.timeoutMs ? { timeout: opts.timeoutMs } : undefined,
+  );
+
+  const text = res.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+  // Best-effort: collect the URLs the tools actually fetched/cited from the result blocks.
+  const urls = new Set<string>();
+  for (const m of JSON.stringify(res.content).matchAll(/https?:\/\/[^\s"'<>)\]]+/g)) {
+    urls.add(m[0].replace(/[.,]+$/, ''));
+  }
+  return { text, sourceUrls: [...urls].slice(0, 8) };
+}
+
 /** Pull the first JSON object/array out of a model reply and parse it. */
 export function extractJson<T = any>(text: string): T | null {
   const m = /\{[\s\S]*\}|\[[\s\S]*\]/.exec(text);

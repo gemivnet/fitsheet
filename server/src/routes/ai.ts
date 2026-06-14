@@ -15,6 +15,7 @@ import { type Anomaly, generateAnomalies } from '../ai/anomalies';
 import { marmaladeReply } from '../ai/chat';
 import type { ChatTurn } from '../ai/client';
 import { cleanComponents, FULL_MENU_SYSTEM, fullMenuContent, restaurantFullMenu, restaurantItem, salvageObjects } from '../ai/restaurantItem';
+import { buildCustomItem, getRestaurantMenu, loadRestaurantItems } from '../ai/restaurantNutrition';
 import { hasAnthropicKey } from '../config';
 import type { DB } from '../db/index';
 import { upload } from '../upload';
@@ -302,6 +303,51 @@ export function aiRouter(db: DB): Router {
       send({ error: 'menu_failed' });
     } finally {
       res.end();
+    }
+  });
+
+  // ── items-first menu: whole items (each with parts + add-ons), grounded in official web ──
+  // GET serves whatever's cached (never triggers AI), so the menu opens instantly.
+  r.get('/restaurant-items', (req, res) => {
+    const restaurant = titleCase(String(req.query.restaurant ?? ''));
+    if (!restaurant) return res.json({ items: [], cached: false });
+    const items = loadRestaurantItems(db, restaurant);
+    res.json({ items, cached: items.length > 0 });
+  });
+
+  // Build/refresh the menu — SSE so the app can narrate "Searching the web… Reading nutrition…".
+  r.post('/restaurant-items-stream', async (req, res) => {
+    const restaurant = titleCase(String(req.body?.restaurant ?? ''));
+    const refresh = !!req.body?.refresh;
+    if (!restaurant) return res.status(400).json({ error: 'restaurant required' });
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+    const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
+    try {
+      const out = await getRestaurantMenu(db, restaurant, { refresh, onStatus: (m) => send({ status: m }) });
+      send({ done: true, ...out });
+    } catch (e) {
+      console.warn('[ai] restaurant items stream failed:', e);
+      send({ error: 'menu_failed' });
+    } finally {
+      res.end();
+    }
+  });
+
+  // Build one custom item the user typed (not on the menu) — grounded on the cached nutrition.
+  r.post('/restaurant-item-build', async (req, res) => {
+    const restaurant = titleCase(String(req.body?.restaurant ?? ''));
+    const item = String(req.body?.item ?? '').trim();
+    if (!restaurant || !item) return res.status(400).json({ error: 'restaurant and item required' });
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    try {
+      const built = await buildCustomItem(db, restaurant, item);
+      res.json({ item: built });
+    } catch (e) {
+      aiFail(res, 'restaurant_item_build', e);
     }
   });
 

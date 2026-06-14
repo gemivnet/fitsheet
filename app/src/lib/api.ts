@@ -348,7 +348,31 @@ export interface RestaurantItem {
   name: string;
   components: RestaurantComponent[];
   note?: string | null;
-  confidence?: 'published' | 'estimated';
+  confidence?: 'official' | 'published' | 'estimated';
+}
+// items-first dining: a whole menu item plus its parts + add-ons (modifiers)
+export interface ItemModifier {
+  name: string;
+  kind: 'part' | 'addon';
+  grams: number;
+  kcal: number;
+  protein_g: number;
+  carb_g: number;
+  fat_g: number;
+  default_on: boolean;
+}
+export interface MenuItem {
+  id?: number;
+  name: string;
+  category: string;
+  grams: number;
+  kcal: number;
+  protein_g: number;
+  carb_g: number;
+  fat_g: number;
+  modifiers: ItemModifier[];
+  confidence: 'official' | 'published' | 'estimated';
+  source_url?: string | null;
 }
 export interface MenuComponent {
   id: number;
@@ -508,6 +532,9 @@ export const api = {
     restaurantItem: (restaurant: string, item: string) => req<{ item: RestaurantItem | null; cached?: boolean; error?: string }>('POST', '/api/ai/restaurant-item', { restaurant, item }),
     restaurantMenu: (restaurant: string) => req<({ id: number; query: string } & RestaurantItem)[]>('GET', `/api/ai/restaurant-menu?restaurant=${encodeURIComponent(restaurant)}`),
     restaurantFullMenu: (restaurant: string) => req<{ components: RestaurantComponent[] }>('POST', '/api/ai/restaurant-menu-full', { restaurant }),
+    // items-first: cached menu (GET never triggers AI); the stream builds it; build one custom item
+    restaurantItems: (restaurant: string) => req<{ items: MenuItem[]; cached: boolean }>('GET', `/api/ai/restaurant-items?restaurant=${encodeURIComponent(restaurant)}`),
+    restaurantItemBuild: (restaurant: string, item: string) => req<{ item: MenuItem | null; error?: string }>('POST', '/api/ai/restaurant-item-build', { restaurant, item }),
     complete: (text: string, context: string) => req<{ completion: string }>('POST', '/api/ai/complete', { text, context }),
   },
 
