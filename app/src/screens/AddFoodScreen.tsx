@@ -14,6 +14,7 @@ import { DishBuilderTab } from './DishBuilderScreen';
 import { api, type Food, type OffFood, type Suggestion } from '../lib/api';
 import { appendImage } from '../lib/upload';
 import { fuzzy } from '../lib/search';
+import { speechSupported, useSpeech } from '../lib/speech';
 
 const FOOD_KEYS = [
   { name: 'name' as const, weight: 0.8 },
@@ -32,11 +33,13 @@ const MEALS: { key: string; label: string }[] = [
   { key: 'snacks', label: 'Snacks' },
 ];
 
-// The add modes, in order. Find/Scan/Describe render inline; Dining/Dish open their own screens.
+// The add modes, in order. Find/Scan/Describe/Speak render inline; Dining/Dish open their own
+// screens. Speak is web-only (Web Speech API) — dropped from the row when unsupported.
 const MODES: { key: string; label: string; icon: IconName }[] = [
   { key: 'Find', label: 'Find', icon: 'search' },
   { key: 'Scan', label: 'Scan', icon: 'camera' },
   { key: 'Describe', label: 'Describe', icon: 'edit' },
+  ...(speechSupported() ? [{ key: 'Speak', label: 'Speak', icon: 'bell' as IconName }] : []),
   { key: 'Dining', label: 'Dining out', icon: 'food' },
   { key: 'Dish', label: 'Build a dish', icon: 'flame' },
 ];
@@ -196,6 +199,7 @@ export function AddFoodScreen({ navigation, route }: Props) {
         {tab === 'Find' ? <FindTab slot={slot} date={date} onPick={setPicked} onQuickLog={quickLog} /> : null}
         {tab === 'Scan' ? <ScanTab onPick={setPicked} /> : null}
         {tab === 'Describe' ? <DescribeTab slot={slot} date={date} onDone={() => navigation.goBack()} /> : null}
+        {tab === 'Speak' ? <SpeakTab slot={slot} date={date} onDone={() => navigation.goBack()} /> : null}
         {tab === 'Dining' ? <DiningOutTab slot={slot} date={date} goDay={() => navigation.goBack()} /> : null}
         {tab === 'Dish' ? <DishBuilderTab slot={slot} date={date} goDay={() => navigation.goBack()} /> : null}
 
@@ -407,61 +411,50 @@ interface NlItem {
   fat_100g: number;
 }
 
-function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDone: () => void }) {
+type ParsedFood = { name: string; grams: number; kcal: number; protein_g: number; carb_g: number; fat_g: number };
+
+// AI returns absolute grams + macros for the portion; we store per-100g so the amount stays editable.
+const parsedToItems = (parsed: ParsedFood[]): NlItem[] =>
+  parsed.map((p) => ({
+    name: p.name,
+    grams: Math.round(p.grams),
+    kcal_100g: p.grams > 0 ? Math.round((p.kcal / p.grams) * 100) : 0,
+    protein_100g: p.grams > 0 ? Math.round((p.protein_g / p.grams) * 100) : 0,
+    carb_100g: p.grams > 0 ? Math.round((p.carb_g / p.grams) * 100) : 0,
+    fat_100g: p.grams > 0 ? Math.round((p.fat_g / p.grams) * 100) : 0,
+  }));
+
+// The editable parsed-items list shared by Describe (typed/photo) and Speak (voice): tap a name to
+// swap the food, tap grams to adjust, ×  to drop, then Log all. Owns the amount pad + replace sheet.
+function ParsedItemsConfirm({
+  items,
+  setItems,
+  slot,
+  date,
+  onDone,
+}: {
+  items: NlItem[];
+  setItems: React.Dispatch<React.SetStateAction<NlItem[] | null>>;
+  slot: string;
+  date: string;
+  onDone: () => void;
+}) {
   const t = useTheme();
   const qc = useQueryClient();
-  const [text, setText] = useState('');
-  const [items, setItems] = useState<NlItem[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [padIdx, setPadIdx] = useState<number | null>(null);
+  const [replIdx, setReplIdx] = useState<number | null>(null);
   const pad = useNumberField('0');
 
-  const applyItems = (parsed: { name: string; grams: number; kcal: number; protein_g: number; carb_g: number; fat_g: number }[]) => {
-    setError(null);
-    setItems(
-      parsed.map((p) => ({
-        name: p.name,
-        grams: Math.round(p.grams),
-        kcal_100g: p.grams > 0 ? Math.round((p.kcal / p.grams) * 100) : 0,
-        protein_100g: p.grams > 0 ? Math.round((p.protein_g / p.grams) * 100) : 0,
-        carb_100g: p.grams > 0 ? Math.round((p.carb_g / p.grams) * 100) : 0,
-        fat_100g: p.grams > 0 ? Math.round((p.fat_g / p.grams) * 100) : 0,
-      })),
-    );
-  };
-  const onParseError = (e: any) =>
-    setError(
-      e?.status === 503
-        ? 'AI is off — add ANTHROPIC_API_KEY on the server.'
-        : 'I couldn’t make that out. Try adding rough amounts — like “2 eggs and a slice of toast” — then tap Try again.',
-    );
-
-  const parse = useMutation({ mutationFn: () => api.ai.parseFood(text, slot), onSuccess: (out) => applyItems(out.items), onError: onParseError, meta: { suppressErrorToast: true } });
-  const parsePhoto = useMutation({ mutationFn: (form: FormData) => api.ai.parseFoodPhoto(form), onSuccess: (out) => applyItems(out.items), onError: onParseError, meta: { suppressErrorToast: true } });
-
-  const pickNotes = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
-    if (res.canceled || !res.assets?.[0]) return;
-    const a = res.assets[0];
-    const form = new FormData();
-    await appendImage(form, 'file', a.uri, { name: 'notes.jpg', type: a.mimeType });
-    form.append('slot', slot);
-    parsePhoto.mutate(form);
-  };
-
-  const [replIdx, setReplIdx] = useState<number | null>(null);
   const setGrams = (i: number, g: number) => setItems((xs) => (xs ? xs.map((it, idx) => (idx === i ? { ...it, grams: g } : it)) : xs));
   const remove = (i: number) => setItems((xs) => (xs ? xs.filter((_, idx) => idx !== i) : xs));
-  // Swap one item for the right food (e.g. "eggs" → "Egg Beaters"), keeping the amount she set.
   const replaceItem = (i: number, p: { name: string; kcal_100g: number; protein_100g: number; carb_100g: number; fat_100g: number }) =>
     setItems((xs) => (xs ? xs.map((it, idx) => (idx === i ? { ...it, ...p } : it)) : xs));
   const openPad = (i: number) => {
-    pad.reset(String(items?.[i].grams ?? 0));
+    pad.reset(String(items[i].grams ?? 0));
     setPadIdx(i);
   };
 
   const logAll = async () => {
-    if (!items) return;
     let logged = 0;
     try {
       for (const it of items) {
@@ -480,86 +473,47 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
     onDone();
   };
 
-  const padItem = padIdx != null ? items?.[padIdx] : null;
+  const padItem = padIdx != null ? items[padIdx] : null;
   const padG = Number(pad.value) || 0;
 
   return (
-    <View>
-      <TextField label="What did you eat?" value={text} onChangeText={setText} placeholder="e.g. 2 eggs, toast with butter, and a latte" multiline />
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        <View style={{ flex: 1 }}>
-          <Button full icon="check" onPress={() => parse.mutate()}>
-            {parse.isPending ? 'Reading…' : 'Estimate it'}
-          </Button>
-        </View>
-        <Button variant="soft" icon="camera" onPress={pickNotes}>
-          {parsePhoto.isPending ? 'Reading…' : 'Snap notes'}
+    <View style={{ marginTop: 16 }}>
+      <SectionLabel style={{ marginBottom: 8 }}>Found · tap a name to change it, grams to adjust</SectionLabel>
+      <Card pad={6}>
+        {items.map((it, i) => (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: i === items.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
+            <Pressable onPress={() => setReplIdx(i)} style={{ flex: 1, minWidth: 0 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <T w={800} size={15} numberOfLines={1} style={{ flexShrink: 1 }}>
+                  {it.name}
+                </T>
+                <Icon name="edit" size={13} color={t.text3} />
+              </View>
+              <T num w={700} size={12} color={t.text3}>
+                {Math.round((it.kcal_100g * it.grams) / 100)} kcal
+              </T>
+            </Pressable>
+            <Pressable onPress={() => openPad(i)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: t.surface, borderWidth: 1.5, borderColor: t.hairline, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
+              <T num w={800} size={15}>
+                {it.grams}
+              </T>
+              <T w={700} size={11} color={t.text3}>
+                g
+              </T>
+            </Pressable>
+            <Pressable onPress={() => remove(i)} hitSlop={8}>
+              <T w={800} size={20} color={t.text3}>
+                ×
+              </T>
+            </Pressable>
+          </View>
+        ))}
+      </Card>
+      <View style={{ marginTop: 12 }}>
+        <Button full size="lg" icon="check" onPress={logAll}>
+          Log {items.length} to {slot}
         </Button>
       </View>
-      <T w={600} size={12} color={t.text3} style={{ marginTop: 8 }}>
-        Type what you ate, or snap a photo of your notes and we&rsquo;ll read it.
-      </T>
-      {error ? (
-        <View style={{ marginTop: 12 }}>
-          <T w={700} size={14} color={t.caution} style={{ marginBottom: 10 }}>
-            {error}
-          </T>
-          {text.trim().length > 0 ? (
-            <Button variant="soft" icon="edit" onPress={() => parse.mutate()}>
-              {parse.isPending ? 'Reading…' : 'Try again'}
-            </Button>
-          ) : null}
-        </View>
-      ) : null}
-      {items && items.length ? (
-        <View style={{ marginTop: 16 }}>
-          <SectionLabel style={{ marginBottom: 8 }}>Found · tap a name to change it, grams to adjust</SectionLabel>
-          <Card pad={6}>
-            {items.map((it, i) => (
-              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: i === items.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
-                <Pressable onPress={() => setReplIdx(i)} style={{ flex: 1, minWidth: 0 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    <T w={800} size={15} numberOfLines={1} style={{ flexShrink: 1 }}>
-                      {it.name}
-                    </T>
-                    <Icon name="edit" size={13} color={t.text3} />
-                  </View>
-                  <T num w={700} size={12} color={t.text3}>
-                    {Math.round((it.kcal_100g * it.grams) / 100)} kcal
-                  </T>
-                </Pressable>
-                <Pressable onPress={() => openPad(i)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: t.surface, borderWidth: 1.5, borderColor: t.hairline, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
-                  <T num w={800} size={15}>
-                    {it.grams}
-                  </T>
-                  <T w={700} size={11} color={t.text3}>
-                    g
-                  </T>
-                </Pressable>
-                <Pressable onPress={() => remove(i)} hitSlop={8}>
-                  <T w={800} size={20} color={t.text3}>
-                    ×
-                  </T>
-                </Pressable>
-              </View>
-            ))}
-          </Card>
-          <View style={{ marginTop: 12 }}>
-            <Button full size="lg" icon="check" onPress={logAll}>
-              Log {items.length} to {slot}
-            </Button>
-          </View>
-        </View>
-      ) : items ? (
-        <View style={{ marginTop: 12 }}>
-          <T w={700} color={t.text3} style={{ marginBottom: 10 }}>
-            Nothing recognized — try naming each food with a rough amount, like “a cup of rice and 2 chicken thighs”.
-          </T>
-          <Button variant="soft" icon="edit" onPress={() => parse.mutate()}>
-            {parse.isPending ? 'Reading…' : 'Try again'}
-          </Button>
-        </View>
-      ) : null}
 
       <Sheet visible={padIdx != null} onClose={() => setPadIdx(null)} title={padItem?.name ?? 'Amount'}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
@@ -594,13 +548,162 @@ function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDon
       </Sheet>
 
       <ReplaceItemSheet
-        item={replIdx != null ? (items?.[replIdx] ?? null) : null}
+        item={replIdx != null ? (items[replIdx] ?? null) : null}
         onClose={() => setReplIdx(null)}
         onReplace={(p) => {
           if (replIdx != null) replaceItem(replIdx, p);
           setReplIdx(null);
         }}
       />
+    </View>
+  );
+}
+
+function DescribeTab({ slot, date, onDone }: { slot: string; date: string; onDone: () => void }) {
+  const t = useTheme();
+  const [text, setText] = useState('');
+  const [items, setItems] = useState<NlItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const applyItems = (parsed: ParsedFood[]) => {
+    setError(null);
+    setItems(parsedToItems(parsed));
+  };
+  const onParseError = (e: any) =>
+    setError(
+      e?.status === 503
+        ? 'AI is off — add ANTHROPIC_API_KEY on the server.'
+        : 'I couldn’t make that out. Try adding rough amounts — like “2 eggs and a slice of toast” — then tap Try again.',
+    );
+
+  const parse = useMutation({ mutationFn: () => api.ai.parseFood(text, slot), onSuccess: (out) => applyItems(out.items), onError: onParseError, meta: { suppressErrorToast: true } });
+  const parsePhoto = useMutation({ mutationFn: (form: FormData) => api.ai.parseFoodPhoto(form), onSuccess: (out) => applyItems(out.items), onError: onParseError, meta: { suppressErrorToast: true } });
+
+  const pickNotes = async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
+    if (res.canceled || !res.assets?.[0]) return;
+    const a = res.assets[0];
+    const form = new FormData();
+    await appendImage(form, 'file', a.uri, { name: 'notes.jpg', type: a.mimeType });
+    form.append('slot', slot);
+    parsePhoto.mutate(form);
+  };
+
+  return (
+    <View>
+      <TextField label="What did you eat?" value={text} onChangeText={setText} placeholder="e.g. 2 eggs, toast with butter, and a latte" multiline />
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Button full icon="check" onPress={() => parse.mutate()}>
+            {parse.isPending ? 'Reading…' : 'Estimate it'}
+          </Button>
+        </View>
+        <Button variant="soft" icon="camera" onPress={pickNotes}>
+          {parsePhoto.isPending ? 'Reading…' : 'Snap notes'}
+        </Button>
+      </View>
+      <T w={600} size={12} color={t.text3} style={{ marginTop: 8 }}>
+        Type what you ate, or snap a photo of your notes and we&rsquo;ll read it.
+      </T>
+      {error ? (
+        <View style={{ marginTop: 12 }}>
+          <T w={700} size={14} color={t.caution} style={{ marginBottom: 10 }}>
+            {error}
+          </T>
+          {text.trim().length > 0 ? (
+            <Button variant="soft" icon="edit" onPress={() => parse.mutate()}>
+              {parse.isPending ? 'Reading…' : 'Try again'}
+            </Button>
+          ) : null}
+        </View>
+      ) : null}
+      {items && items.length ? (
+        <ParsedItemsConfirm items={items} setItems={setItems} slot={slot} date={date} onDone={onDone} />
+      ) : items ? (
+        <View style={{ marginTop: 12 }}>
+          <T w={700} color={t.text3} style={{ marginBottom: 10 }}>
+            Nothing recognized — try naming each food with a rough amount, like “a cup of rice and 2 chicken thighs”.
+          </T>
+          <Button variant="soft" icon="edit" onPress={() => parse.mutate()}>
+            {parse.isPending ? 'Reading…' : 'Try again'}
+          </Button>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+// Speak mode — press to talk, we transcribe in the browser, then run the same parse → edit → log
+// pipeline as Describe. Web-only (the mode is hidden when the Web Speech API is unavailable).
+function SpeakTab({ slot, date, onDone }: { slot: string; date: string; onDone: () => void }) {
+  const t = useTheme();
+  const speech = useSpeech();
+  const [items, setItems] = useState<NlItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const parse = useMutation({
+    mutationFn: (text: string) => api.ai.parseFood(text, slot),
+    onSuccess: (out) => {
+      setError(null);
+      setItems(parsedToItems(out.items));
+    },
+    onError: (e: any) =>
+      setError(e?.status === 503 ? 'AI is off — add ANTHROPIC_API_KEY on the server.' : 'I couldn’t make that out. Try again and name rough amounts.'),
+    meta: { suppressErrorToast: true },
+  });
+
+  const heard = `${speech.transcript}${speech.interim ? ` ${speech.interim}` : ''}`.trim();
+  const onMic = () => {
+    if (speech.listening) {
+      speech.stop();
+      const said = speech.transcript.trim();
+      if (said) parse.mutate(said);
+    } else {
+      setItems(null);
+      setError(null);
+      speech.start();
+    }
+  };
+
+  return (
+    <View>
+      <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+        <Pressable
+          onPress={onMic}
+          style={[
+            { width: 96, height: 96, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: speech.listening ? t.caution : t.accent },
+            t.shadowSm,
+          ]}
+        >
+          <Icon name="bell" size={40} stroke={2.4} color="#fff" />
+        </Pressable>
+        <T w={800} size={15} style={{ marginTop: 14 }}>
+          {speech.listening ? 'Listening… tap to finish' : parse.isPending ? 'Reading…' : 'Tap and tell me what you ate'}
+        </T>
+        {heard ? (
+          <T w={600} size={14} color={t.text2} style={{ marginTop: 8, textAlign: 'center' }}>
+            “{heard}”
+          </T>
+        ) : (
+          <T w={600} size={12} color={t.text3} style={{ marginTop: 8, textAlign: 'center' }}>
+            e.g. “two eggs, toast with butter, and a latte”
+          </T>
+        )}
+      </View>
+      {speech.error || error ? (
+        <T w={700} size={14} color={t.caution} style={{ marginTop: 4, textAlign: 'center' }}>
+          {speech.error || error}
+        </T>
+      ) : null}
+      {items && items.length ? (
+        <ParsedItemsConfirm items={items} setItems={setItems} slot={slot} date={date} onDone={onDone} />
+      ) : items ? (
+        <View style={{ marginTop: 12 }}>
+          <T w={700} color={t.text3} style={{ textAlign: 'center' }}>
+            Nothing recognized — tap the mic and name each food with a rough amount.
+          </T>
+        </View>
+      ) : null}
     </View>
   );
 }
