@@ -3,8 +3,11 @@
 // check-in note, she pops a speech bubble in her voice and offers to take you to the right place.
 // Tap her any time and she'll say hello even when there's no news. She's the persona of the app.
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Dimensions, Easing, Pressable, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import Svg, { Rect } from 'react-native-svg';
@@ -15,6 +18,25 @@ import { MARMALADE_IDLE, pick } from '../lib/encouragement';
 import { todayStr } from '../lib/date';
 import { navigate, navigationRef } from '../navigation/ref';
 import { useTheme } from '../theme';
+
+// Where Shelby last parked her, as an offset from the home corner (bottom-left). Persisted so she
+// stays put across reloads. Web-only storage; native just starts in the corner.
+const POS_KEY = 'marmalade-pos';
+function loadPos(): { x: number; y: number } | null {
+  try {
+    const raw = typeof window !== 'undefined' && window.localStorage?.getItem(POS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function savePos(x: number, y: number): void {
+  try {
+    window.localStorage?.setItem(POS_KEY, JSON.stringify({ x, y }));
+  } catch {
+    /* ignore */
+  }
+}
 
 export interface CompanionMessage {
   id: string;
@@ -115,27 +137,6 @@ export function Companion() {
   const current = pending[0] ?? null;
   const hasNews = !!current;
 
-  const bob = useRef(new Animated.Value(0)).current;
-  const enter = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(enter, { toValue: 1, duration: 360, easing: Easing.out(Easing.back(1.4)), useNativeDriver: true }).start();
-  }, [enter]);
-  useEffect(() => {
-    if (!hasNews) {
-      bob.stopAnimation();
-      bob.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(bob, { toValue: 1, duration: 850, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(bob, { toValue: 0, duration: 850, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [hasNews, bob]);
-
   // a fresh news item should pop open the bubble
   useEffect(() => {
     if (current) {
@@ -146,8 +147,6 @@ export function Companion() {
 
   // idle life — when she has nothing to say she naps, plays with a yarn ball, or just sits
   const [activity, setActivity] = useState<'sit' | 'sleep' | 'play'>('sit');
-  const breathe = useRef(new Animated.Value(0)).current;
-  const ball = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (hasNews || idleLine) {
       setActivity('sit');
@@ -177,30 +176,47 @@ export function Companion() {
       clearTimeout(timer);
     };
   }, [hasNews, idleLine]);
-  useEffect(() => {
-    if (activity === 'sleep') {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(breathe, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-          Animated.timing(breathe, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        ]),
-      );
-      loop.start();
-      return () => loop.stop();
-    }
-    if (activity === 'play') {
-      ball.setValue(0);
-      const loop = Animated.loop(Animated.timing(ball, { toValue: 1, duration: 640, easing: Easing.inOut(Easing.quad), useNativeDriver: true }));
-      loop.start();
-      return () => loop.stop();
-    }
-  }, [activity, breathe, ball]);
 
   const dismiss = () => current && setDismissed((s) => new Set(s).add(current.id));
   const onTapCat = () => {
     if (hasNews) setOpen((o) => !o);
     else setIdleLine((l) => (l ? null : pick(MARMALADE_IDLE)));
   };
+  // keep the latest tap handler reachable from the gesture (which is built once)
+  const tapRef = React.useRef(onTapCat);
+  tapRef.current = onTapCat;
+  const fireTap = () => tapRef.current();
+
+  // ── drag her anywhere, and remember where she's parked ──────────────────────
+  const tx = useSharedValue(0);
+  const ty = useSharedValue(0);
+  useEffect(() => {
+    const p = loadPos();
+    if (p) {
+      tx.value = p.x;
+      ty.value = p.y;
+    }
+  }, [tx, ty]);
+  const win = Dimensions.get('window');
+  const maxRight = Math.max(0, win.width - 64 - 28); // 64 = her box, 14px home margin each side
+  const minUp = -Math.max(0, win.height - insets.top - 140);
+  const pan = Gesture.Pan()
+    .minDistance(8)
+    .onChange((e) => {
+      'worklet';
+      tx.value = Math.min(maxRight, Math.max(-8, tx.value + e.changeX));
+      ty.value = Math.min(40, Math.max(minUp, ty.value + e.changeY));
+    })
+    .onEnd(() => {
+      'worklet';
+      runOnJS(savePos)(tx.value, ty.value);
+    });
+  const tap = Gesture.Tap().onEnd(() => {
+    'worklet';
+    runOnJS(fireTap)();
+  });
+  const gesture = Gesture.Exclusive(pan, tap);
+  const dragStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tx.value }, { translateY: ty.value }] }));
 
   // what the bubble shows: a real message, or a tapped idle line
   const bubble = current
@@ -216,9 +232,8 @@ export function Companion() {
     setDismissed((s) => new Set([...s, ...pending.map((m) => m.id)])); // engaging directly clears the queue
     navigate('More', { screen: 'MarmaladeChat' });
   };
-  const translateY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -5] });
   return (
-    <View pointerEvents="box-none" style={{ position: 'absolute', left: 14, bottom: insets.bottom + 64, alignItems: 'flex-start' }}>
+    <Animated.View pointerEvents="box-none" style={[{ position: 'absolute', left: 14, bottom: insets.bottom + 64, alignItems: 'flex-start' }, dragStyle]}>
       {bubble && (open || !current) ? (
         <View style={[{ maxWidth: 264, backgroundColor: t.surface, borderRadius: 18, padding: 14, marginBottom: 6, borderWidth: 1, borderColor: t.hairline }, t.shadowSm]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -259,33 +274,53 @@ export function Companion() {
           </View>
         </View>
       ) : null}
-      <Animated.View style={{ opacity: enter, marginLeft: 4 }}>
+      <MotiView
+        from={{ opacity: 0, scale: 0.6 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ type: 'spring', damping: 12, stiffness: 180 }}
+        style={{ marginLeft: 4 }}
+      >
         <View style={{ width: 64 }}>
           {/* napping — drifting Zzz */}
           {activity === 'sleep' ? (
-            <Animated.View style={{ position: 'absolute', top: -8, right: 0, opacity: breathe.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }) }}>
+            <MotiView
+              from={{ opacity: 0.35 }}
+              animate={{ opacity: 1 }}
+              transition={{ type: 'timing', duration: 1800, loop: true, repeatReverse: true, easing: Easing.inOut(Easing.quad) }}
+              style={{ position: 'absolute', top: -8, right: 0 }}
+            >
               <T w={800} size={13} color={t.text3}>
                 z z z
               </T>
-            </Animated.View>
+            </MotiView>
           ) : null}
           {/* playing — a yarn ball bouncing beside her */}
           {activity === 'play' ? (
-            <Animated.View style={{ position: 'absolute', right: -8, bottom: 8, transform: [{ translateY: ball.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -18, 0] }) }] }}>
+            <MotiView
+              from={{ translateY: 0 }}
+              animate={{ translateY: -18 }}
+              transition={{ type: 'timing', duration: 320, loop: true, repeatReverse: true, easing: Easing.inOut(Easing.quad) }}
+              style={{ position: 'absolute', right: -8, bottom: 8 }}
+            >
               <View style={{ width: 12, height: 12, borderRadius: 999, backgroundColor: t.accent, borderWidth: 1.5, borderColor: t.accentPress }} />
-            </Animated.View>
+            </MotiView>
           ) : null}
-          <Animated.View
-            style={{
-              transform: [{ translateY }, { scale: activity === 'sleep' ? breathe.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) : 1 }],
-            }}
-          >
-            <Pressable onPress={onTapCat} hitSlop={8} accessibilityLabel="Marmalade the cat">
+          <GestureDetector gesture={gesture}>
+            <MotiView
+              animate={{ translateY: hasNews ? -5 : 0, scale: activity === 'sleep' ? 1.04 : 1 }}
+              transition={{
+                translateY: hasNews
+                  ? { type: 'timing', duration: 850, loop: true, repeatReverse: true, easing: Easing.inOut(Easing.quad) }
+                  : { type: 'spring', damping: 14 },
+                scale: activity === 'sleep' ? { type: 'timing', duration: 1800, loop: true, repeatReverse: true, easing: Easing.inOut(Easing.quad) } : { type: 'spring', damping: 14 },
+              }}
+              accessibilityLabel="Marmalade the cat"
+            >
               <CatSprite size={58} />
-            </Pressable>
-          </Animated.View>
+            </MotiView>
+          </GestureDetector>
         </View>
-      </Animated.View>
-    </View>
+      </MotiView>
+    </Animated.View>
   );
 }

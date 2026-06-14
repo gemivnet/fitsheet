@@ -3,6 +3,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
+import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -154,20 +155,22 @@ export function FoodDayScreen({ navigation }: Props) {
                 </T>
               ) : (
                 items.map((it, i) => (
-                  <Pressable key={it.id} onPress={() => setEditing(it)} delayLongPress={250} onLongPress={() => removeItem(it)}>
-                    <FoodRow
-                      name={it.name}
-                      grams={Math.round(it.grams)}
-                      kcal={Math.round(it.kcal)}
-                      eatingOut={!!it.eating_out}
-                      macros={[
-                        { label: 'Protein', grams: Math.round(it.protein), varName: 'pro' },
-                        { label: 'Carb', grams: Math.round(it.carb), varName: 'carb' },
-                        { label: 'Fat', grams: Math.round(it.fat), varName: 'fat' },
-                      ]}
-                      last={i === items.length - 1}
-                    />
-                  </Pressable>
+                  <SwipeRow key={it.id} onRemove={() => removeItem(it)}>
+                    <Pressable onPress={() => setEditing(it)} delayLongPress={250} onLongPress={() => removeItem(it)} style={{ backgroundColor: t.surface }}>
+                      <FoodRow
+                        name={it.name}
+                        grams={Math.round(it.grams)}
+                        kcal={Math.round(it.kcal)}
+                        eatingOut={!!it.eating_out}
+                        macros={[
+                          { label: 'Protein', grams: Math.round(it.protein), varName: 'pro' },
+                          { label: 'Carb', grams: Math.round(it.carb), varName: 'carb' },
+                          { label: 'Fat', grams: Math.round(it.fat), varName: 'fat' },
+                        ]}
+                        last={i === items.length - 1}
+                      />
+                    </Pressable>
+                  </SwipeRow>
                 ))
               )}
             </Card>
@@ -213,6 +216,25 @@ export function FoodDayScreen({ navigation }: Props) {
         <Icon name="plus" size={28} stroke={2.8} color="#fff" />
       </Pressable>
     </View>
+  );
+}
+
+// Swipe a food row left to reveal Remove — still routes through the same confirm + delete as a
+// long-press, so a slip of the thumb can't wipe a row by accident.
+function SwipeRow({ children, onRemove }: { children: React.ReactNode; onRemove: () => void }) {
+  const t = useTheme();
+  const renderRight = () => (
+    <Pressable onPress={onRemove} style={{ backgroundColor: t.caution, justifyContent: 'center', alignItems: 'center', width: 96, flexDirection: 'row', gap: 6 }}>
+      <Icon name="flame" size={16} stroke={2.6} color="#fff" />
+      <T w={800} size={14} color="#fff">
+        Remove
+      </T>
+    </Pressable>
+  );
+  return (
+    <Swipeable renderRightActions={renderRight} overshootRight={false} rightThreshold={40} friction={1.6}>
+      {children}
+    </Swipeable>
   );
 }
 

@@ -1,31 +1,24 @@
 // Celebration.tsx — milestone moment. Confetti + KPI + encouraging copy.
 // Ported from components.jsx (CelebrationModal/Confetti).
 
-import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Modal, View, type DimensionValue } from 'react-native';
+import React from 'react';
+import { Easing, Modal, View, type DimensionValue } from 'react-native';
+import { MotiView } from 'moti';
 import { useTheme } from '../theme';
 import { Button, Card, T } from './primitives';
 
 const CONFETTI_COLORS = ['#F8836B', '#FFD9C7', '#6BBF8A', '#E8B04B', '#7CA6C9', '#C07A9E'];
 
 function Piece({ i, height }: { i: number; height: number }) {
-  const v = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const delay = (i % 7) * 180;
-    const dur = 1600 + (i % 5) * 300;
-    const loop = Animated.loop(
-      Animated.timing(v, { toValue: 1, duration: dur, delay, easing: Easing.bezier(0.4, 0.6, 0.6, 1), useNativeDriver: true }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [i, v]);
+  const delay = (i % 7) * 180;
+  const dur = 1600 + (i % 5) * 300;
   const left = `${(i * 37) % 100}%` as DimensionValue;
   const size = 7 + (i % 4) * 2;
-  const translateY = v.interpolate({ inputRange: [0, 1], outputRange: [-16, height] });
-  const rotate = v.interpolate({ inputRange: [0, 1], outputRange: [`${i * 47}deg`, `${i * 47 + 540}deg`] });
-  const opacity = v.interpolate({ inputRange: [0, 0.85, 1], outputRange: [1, 1, 0.9] });
   return (
-    <Animated.View
+    <MotiView
+      from={{ translateY: -16, rotate: `${i * 47}deg`, opacity: 1 }}
+      animate={{ translateY: height, rotate: `${i * 47 + 540}deg`, opacity: 0.9 }}
+      transition={{ type: 'timing', duration: dur, delay, loop: true, repeatReverse: false, easing: Easing.bezier(0.4, 0.6, 0.6, 1) }}
       style={{
         position: 'absolute',
         top: 0,
@@ -34,8 +27,6 @@ function Piece({ i, height }: { i: number; height: number }) {
         height: size * 1.4,
         backgroundColor: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
         borderRadius: 2,
-        opacity,
-        transform: [{ translateY }, { rotate }],
       }}
     />
   );
