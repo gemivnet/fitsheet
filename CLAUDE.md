@@ -88,6 +88,15 @@ copying a saved `server/data/` folder back.
 - The app is React Native rendered to the web via **`react-native-web`** (Expo SDK 56 tooling),
   React Navigation, `react-native-svg`, `@tanstack/react-query`. Barcode scanning uses **ZXing** in
   the browser (`app/src/components/BarcodeScanner.web.tsx`); label/progress photos use the file picker.
+- Motion uses **Reanimated 4 + Moti** (springs, the draggable companion, swipe-to-delete). This needs
+  `app/babel.config.js` with the `react-native-worklets/plugin` listed **last**, and `babel-preset-expo`
+  as an explicit dep — don't delete either or the web build breaks. If Metro caches go stale, rebuild.
+- The calorie ring is drawn with **`@shopify/react-native-skia`** on web (gradient + glow); the SVG ring
+  is the always-safe fallback. `scripts/pwa.mjs` copies `canvaskit.wasm` to the site root and the ring's
+  `locateFile` points there. Other resilient libs: **fuse.js** (fuzzy food search), **date-fns** (all the
+  date helpers), **react-query persistence** (offline cache in localStorage + the offline banner).
+- **Voice logging** (Speak mode in Add food) uses the browser Web Speech API (`lib/speech.ts`); it's a
+  web-only no-op seam like notifications and hides itself where unsupported (e.g. iOS Safari).
 - On web, `expo-notifications` is a no-op (`lib/notifications.ts` guards it). The `/api/settings/reminders`
   payload + seam stay for a future native build / web-push.
 - No auth: protect it by serving it only behind your reverse proxy / private network. The DB seeds a
