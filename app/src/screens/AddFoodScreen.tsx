@@ -13,6 +13,12 @@ import { DiningOutTab } from './DiningOutScreen';
 import { DishBuilderTab } from './DishBuilderScreen';
 import { api, type Food, type OffFood, type Suggestion } from '../lib/api';
 import { appendImage } from '../lib/upload';
+import { fuzzy } from '../lib/search';
+
+const FOOD_KEYS = [
+  { name: 'name' as const, weight: 0.8 },
+  { name: 'brand' as const, weight: 0.2 },
+];
 import { FIRST_LOG_OF_DAY, pick } from '../lib/encouragement';
 import { Font, useTheme } from '../theme';
 import type { FoodStackParams } from '../navigation/types';
@@ -248,20 +254,6 @@ function foodToPicked(f: Food): Picked {
   };
 }
 
-// Typo-tolerant scorer for her own library: substring > all-tokens > subsequence.
-function fuzzyScore(query: string, target: string): number {
-  const q = query.toLowerCase().trim();
-  const s = target.toLowerCase();
-  if (!q) return 0;
-  if (s.includes(q)) return 100 + (s.startsWith(q) ? 50 : 0) - (s.length - q.length) * 0.1;
-  const toks = q.split(/\s+/).filter(Boolean);
-  if (toks.length > 1 && toks.every((tk) => s.includes(tk))) return 60;
-  let i = 0;
-  for (let j = 0; j < s.length && i < q.length; j++) if (s[j] === q[i]) i++;
-  if (i === q.length) return 30 - (s.length - q.length) * 0.05;
-  return 0;
-}
-
 // ── rows ─────────────────────────────────────────────────────────────────────
 
 // Saved food: tap the body to adjust, tap ＋ to log the remembered amount instantly.
@@ -333,15 +325,7 @@ function FindTab({ slot, date, onPick, onQuickLog }: { slot: string; date: strin
   const mine = useQuery({ queryKey: ['foods', 'all'], queryFn: () => api.foods.list() });
   const off = useQuery({ queryKey: ['off', q], queryFn: () => api.off.search(q), enabled: searching });
 
-  const localMatches = useMemo(() => {
-    if (!searching || !mine.data) return [];
-    return mine.data
-      .map((f) => ({ f, score: fuzzyScore(q, `${f.name} ${f.brand ?? ''}`) }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 8)
-      .map((x) => x.f);
-  }, [q, mine.data, searching]);
+  const localMatches = useMemo(() => (searching ? fuzzy(q, mine.data ?? [], FOOD_KEYS, 8) : []), [q, mine.data, searching]);
   const candidates = useMemo(() => (mine.data ?? []).map((f) => f.name), [mine.data]);
 
   return (
@@ -646,15 +630,7 @@ function ReplaceItemSheet({
   const searching = q.length >= 2;
   const mine = useQuery({ queryKey: ['foods', 'all'], queryFn: () => api.foods.list() });
   const off = useQuery({ queryKey: ['off', q], queryFn: () => api.off.search(q), enabled: searching });
-  const localMatches = useMemo(() => {
-    if (!searching || !mine.data) return [];
-    return mine.data
-      .map((f) => ({ f, score: fuzzyScore(q, `${f.name} ${f.brand ?? ''}`) }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 6)
-      .map((x) => x.f);
-  }, [q, mine.data, searching]);
+  const localMatches = useMemo(() => (searching ? fuzzy(q, mine.data ?? [], FOOD_KEYS, 6) : []), [q, mine.data, searching]);
 
   if (!item) return null;
   const pickFood = (f: Food) => onReplace({ name: f.name, kcal_100g: f.kcal_100g, protein_100g: f.protein_100g, carb_100g: f.carb_100g, fat_100g: f.fat_100g });

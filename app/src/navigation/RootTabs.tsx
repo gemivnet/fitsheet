@@ -17,6 +17,7 @@ import {
   HomeScreen,
   LabelCaptureScreen,
   LogWeightScreen,
+  GoalsScreen,
   MarmaladeChatScreen,
   MealPlanScreen,
   MoreHubScreen,
@@ -61,6 +62,7 @@ function MoreStack() {
       <MoreNav.Screen name="Analytics" component={AnalyticsScreen} />
       <MoreNav.Screen name="Settings" component={SettingsScreen} />
       <MoreNav.Screen name="MarmaladeChat" component={MarmaladeChatScreen} />
+      <MoreNav.Screen name="Goals" component={GoalsScreen} />
     </MoreNav.Navigator>
   );
 }

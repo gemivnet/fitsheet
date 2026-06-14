@@ -13,6 +13,7 @@ const ITEMS: { icon: IconName; label: string; sub: string; route: keyof MoreStac
   { icon: 'food', label: 'Recipes', sub: 'Low-cal ideas, cook times', route: 'Recipes' },
   { icon: 'star', label: 'Talk to Marmalade', sub: 'A friend for the tricky moments', route: 'MarmaladeChat' },
   { icon: 'flame', label: 'Meal plan', sub: 'AI plan that fits your goal', route: 'MealPlan' },
+  { icon: 'check', label: 'Weekly goals', sub: 'Check off your week', route: 'Goals' },
   { icon: 'edit', label: 'Notes & journal', sub: 'How you’re feeling', route: 'Notes' },
   { icon: 'trend', label: 'Analytics', sub: 'Trend, TDEE, projections', route: 'Analytics' },
   { icon: 'gear', label: 'Settings', sub: 'Goals, units, reminders', route: 'Settings' },

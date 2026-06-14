@@ -23,6 +23,7 @@ export type MoreStackParams = {
   Analytics: undefined;
   Settings: undefined;
   MarmaladeChat: undefined;
+  Goals: undefined;
 };
 
 export type RootTabParams = {

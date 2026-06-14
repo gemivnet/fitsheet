@@ -100,7 +100,8 @@ export function assembleStored(planDays: { label: string; meals: Omit<StoredMeal
 
 // non-streaming path (structured output) — used as the fallback when streaming isn't available
 export async function generateMealPlan(db: DB, opts: PlanOpts): Promise<StoredPlan | null> {
-  const plan = await runTask(db, { name: 'meal-plan', schema: MealPlanSchema, system: MEALPLAN_SYSTEM, maxTokens: 3500 }, { content: buildMealPlanContent(db, opts), date: opts.date });
+  // 7 days × 4 meals with ingredients + method needs real headroom — 3500 truncated the JSON.
+  const plan = await runTask(db, { name: 'meal-plan', schema: MealPlanSchema, system: MEALPLAN_SYSTEM, maxTokens: 8000 }, { content: buildMealPlanContent(db, opts), date: opts.date });
   if (!plan) return null;
   return assembleStored(plan.days, opts);
 }

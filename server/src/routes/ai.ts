@@ -393,7 +393,7 @@ export function aiRouter(db: DB): Router {
     res.flushHeaders?.();
     const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
     try {
-      const full = await claudeStream({ system: MEALPLAN_SYSTEM, content: buildMealPlanContent(db, { days, guidance, keep, date }), maxTokens: 3500, timeoutMs: 120_000, onText: (t) => send({ t }) });
+      const full = await claudeStream({ system: MEALPLAN_SYSTEM, content: buildMealPlanContent(db, { days, guidance, keep, date }), maxTokens: 8000, timeoutMs: 120_000, onText: (t) => send({ t }) });
       const parsed = MealPlanSchema.safeParse(extractJson(full));
       if (!parsed.success) {
         console.warn('[ai] meal-plan stream failed validation:', parsed.error.issues.slice(0, 3));
