@@ -83,6 +83,13 @@ copying a saved `server/data/` folder back.
   types out, etc. Mirror the SSE pattern in `server/src/routes/ai.ts` (`*-stream` endpoints with
   `claudeStream`) + the client reader in `app/src/screens/MealPlanScreen.tsx` / `DiningOutScreen.tsx`.
   New AI features should stream by default and keep a non-streaming fallback.
+- **Dining out is items-first**: pick a restaurant → its menu of whole items (each with parts +
+  add-ons) → customize each → order tray → log one row per item. The menu is grounded in the chain's
+  OFFICIAL nutrition via Anthropic's `web_search` + `web_fetch` tools (the only place we use tools):
+  `ai/client.ts claudeResearch()` finds + reads the brand's nutrition page/PDF, cached per restaurant
+  in a settings blob; `ai/restaurantNutrition.ts` structures it into the `restaurant_items` table.
+  Items badged "Official" carry a `source_url`; no official source → "Estimated" fallback. One billed
+  search per restaurant (cached); "Refresh from web" forces a redo.
 - Server uses Node's **built-in `node:sqlite`** (no native build needed; requires Node ≥ 22.5, and
   it's already what the Docker image uses). Run with `tsx` — no compile step.
 - The app is React Native rendered to the web via **`react-native-web`** (Expo SDK 56 tooling),
