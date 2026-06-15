@@ -6,6 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, CalorieCalculator, Card, Screen, ScreenHeader, SectionLabel, SegmentedControl, showToast, T, TextField } from '../components';
 import { api, type Settings } from '../lib/api';
+import { nudgesEnabled, setNudgesEnabled } from '../lib/nudges';
 import { confirmAction, notify } from '../lib/dialog';
 import { fromDisplayWeight, toDisplayWeight, type Units } from '../lib/units';
 import { useTheme } from '../theme';
@@ -70,6 +71,7 @@ export function SettingsScreen() {
   const [hour, setHour] = useState('9');
   const [workoutReminders, setWorkoutReminders] = useState(true);
   const [banking, setBanking] = useState(true);
+  const [nudges, setNudges] = useState(nudgesEnabled); // local-only (localStorage), saves on toggle
   const [calcOpen, setCalcOpen] = useState(false);
 
   useEffect(() => {
@@ -176,6 +178,28 @@ export function SettingsScreen() {
             Day-before workout reminders
           </T>
           <Switch value={workoutReminders} onValueChange={setWorkoutReminders} trackColor={{ true: t.accent }} />
+        </View>
+      </Card>
+
+      <Card style={{ marginBottom: 16 }}>
+        <SectionLabel style={{ marginBottom: 14 }}>Marmalade</SectionLabel>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <T w={700} size={15} color={t.text2}>
+              Gentle nudges
+            </T>
+            <T w={600} size={12} color={t.text3} style={{ lineHeight: 17 }}>
+              Let Marmalade pop in with the occasional helpful note — meal-time, weigh-in day, calories left. Off means she only speaks up for real check-ins.
+            </T>
+          </View>
+          <Switch
+            value={nudges}
+            onValueChange={(v) => {
+              setNudges(v);
+              setNudgesEnabled(v); // takes effect right away, no Save needed
+            }}
+            trackColor={{ true: t.accent }}
+          />
         </View>
       </Card>
 

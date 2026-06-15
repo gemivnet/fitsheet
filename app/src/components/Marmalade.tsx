@@ -14,8 +14,9 @@ import Svg, { Rect } from 'react-native-svg';
 import { Icon } from './Icon';
 import { T } from './primitives';
 import { api } from '../lib/api';
-import { MARMALADE_IDLE, pick } from '../lib/encouragement';
-import { todayStr } from '../lib/date';
+import { DAY_OVER_GOAL_GENTLE, MARMALADE_IDLE, pick } from '../lib/encouragement';
+import { markNudgeSeen, nudgeSeenToday, nudgesEnabled } from '../lib/nudges';
+import { slotForNow, todayStr } from '../lib/date';
 import { navigate, navigationRef } from '../navigation/ref';
 import { useTheme } from '../theme';
 
@@ -43,7 +44,8 @@ export interface CompanionMessage {
   title: string;
   message: string;
   severity: 'fyi' | 'heads_up';
-  action: 'none' | 'open_day' | 'open_weight' | 'open_analytics';
+  action: 'none' | 'open_day' | 'open_weight' | 'open_analytics' | 'open_add';
+  slot?: string; // for open_add — which meal to open Add food at
 }
 
 // ── the cat, as a pixel grid (16×18 sitting orange tabby) ─────────────────────
@@ -93,27 +95,68 @@ export function CatSprite({ size }: { size: number }) {
   );
 }
 
-// Build her prioritized queue from the AI surfaces: heads-up anomalies, then fyi, then the note.
+const SLOT_LABEL: Record<string, string> = { breakfast: 'breakfast', lunch: 'lunch', dinner: 'dinner', snacks: 'a snack' };
+
+// Gentle, opt-out, once-a-day proactive nudges, built only from data the app already has (no AI).
+// Each is dismissible and rate-limited (nudges.ts). Suppressed entirely when toggled off or on a
+// fresh, empty setup.
+function useNudges(): CompanionMessage[] {
+  const enabled = nudgesEnabled();
+  const today = todayStr();
+  const dash = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard, enabled, staleTime: 5 * 60 * 1000 });
+  const weights = useQuery({ queryKey: ['weight'], queryFn: api.weight.list, enabled, staleTime: 5 * 60 * 1000 });
+  if (!enabled || !dash.data) return [];
+
+  const day = dash.data.today;
+  const settings = dash.data.settings;
+  const out: CompanionMessage[] = [];
+  const weekday = new Date(`${today}T00:00:00`).getDay();
+  const weighedToday = (weights.data ?? []).some((w) => w.entry_date === today);
+
+  // weigh-in day — only on her chosen day, and only if she hasn't weighed yet
+  if (!nudgeSeenToday('weighin') && settings.weigh_in_weekday === weekday && !weighedToday) {
+    out.push({ id: `nudge:weighin:${today}`, title: 'Marmalade', message: 'It’s weigh-in day — hop on whenever you’re ready. No pressure 🐾', severity: 'fyi', action: 'open_weight' });
+  }
+  // meal-time — the current slot has nothing logged yet
+  const slot = slotForNow();
+  const slotEmpty = !(day.slots?.[slot]?.length);
+  if (!nudgeSeenToday(`meal:${slot}`) && slotEmpty && day.goal > 0) {
+    out.push({ id: `nudge:meal:${slot}:${today}`, title: 'Marmalade', message: `Around ${SLOT_LABEL[slot] ?? slot} time — want to log it? I’ll take you there 🐾`, severity: 'fyi', action: 'open_add', slot });
+  }
+  // near / a little over goal — only once something's logged, never an alarm
+  const remaining = day.banking ? day.adjusted_remaining : day.remaining;
+  if (!nudgeSeenToday('goal') && day.totals.kcal > 0) {
+    if (remaining < 0) out.push({ id: `nudge:goal:${today}`, title: 'Marmalade', message: pick(DAY_OVER_GOAL_GENTLE), severity: 'fyi', action: 'open_day' });
+    else if (remaining <= 150) out.push({ id: `nudge:goal:${today}`, title: 'Marmalade', message: `About ${remaining} kcal left for today — nicely paced ✨`, severity: 'fyi', action: 'open_day' });
+  }
+  return out;
+}
+
+// Build her prioritized queue: heads-up anomalies first, then timely nudges, then fyi anomalies + note.
 function useCompanionMessages(): CompanionMessage[] {
   const today = todayStr();
   const anomalies = useQuery({ queryKey: ['anomalies', today], queryFn: () => api.ai.anomalies(today), staleTime: 60 * 60 * 1000 });
   const checkin = useQuery({ queryKey: ['checkin'], queryFn: api.ai.checkin, staleTime: 60 * 60 * 1000 });
+  const nudges = useNudges();
 
-  const msgs: CompanionMessage[] = [];
+  const heads: CompanionMessage[] = [];
+  const fyi: CompanionMessage[] = [];
   for (const [i, a] of (anomalies.data?.anomalies ?? []).entries()) {
-    msgs.push({ id: `anom:${today}:${i}:${a.title}`, title: a.title, message: a.message, severity: a.severity, action: a.action });
+    const m: CompanionMessage = { id: `anom:${today}:${i}:${a.title}`, title: a.title, message: a.message, severity: a.severity, action: a.action };
+    (a.severity === 'heads_up' ? heads : fyi).push(m);
   }
-  msgs.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'heads_up' ? -1 : 1));
+  const msgs: CompanionMessage[] = [...heads, ...nudges, ...fyi];
   if (checkin.data?.note) {
     msgs.push({ id: `checkin:${checkin.data.note.slice(0, 24)}`, title: 'A little note', message: checkin.data.note, severity: 'fyi', action: 'open_analytics' });
   }
   return msgs;
 }
 
-const act = (action: CompanionMessage['action']) => {
+const act = (action: CompanionMessage['action'], slot?: string) => {
   if (action === 'open_day') navigate('Food', { screen: 'FoodDay' });
   else if (action === 'open_weight') navigate('Weight', { screen: 'Weight' });
   else if (action === 'open_analytics') navigate('More', { screen: 'Analytics' });
+  else if (action === 'open_add') navigate('Food', { screen: 'AddFood', params: { slot: slot ?? slotForNow(), date: todayStr() } });
 };
 
 export function Companion() {
@@ -137,11 +180,12 @@ export function Companion() {
   const current = pending[0] ?? null;
   const hasNews = !!current;
 
-  // a fresh news item should pop open the bubble
+  // a fresh news item should pop open the bubble; a surfaced nudge counts as "shown today"
   useEffect(() => {
     if (current) {
       setOpen(true);
       setIdleLine(null);
+      if (current.id.startsWith('nudge:')) markNudgeSeen(current.id.split(':').slice(1, -1).join(':'));
     }
   }, [current?.id]);
 
@@ -177,10 +221,21 @@ export function Companion() {
     };
   }, [hasNews, idleLine]);
 
+  // shared (cached) dashboard so a tap with no news can say something genuinely useful
+  const dash = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard, staleTime: 5 * 60 * 1000 });
+  const usefulIdle = (): string | null => {
+    const day = dash.data?.today;
+    if (!day || day.goal <= 0 || day.totals.kcal <= 0) return null;
+    const rem = day.banking ? day.adjusted_remaining : day.remaining;
+    if (rem < 0) return 'A bit over today — one day never undoes you 🐾';
+    return `${rem} kcal left for today. You’ve got this ✨`;
+  };
+
   const dismiss = () => current && setDismissed((s) => new Set(s).add(current.id));
   const onTapCat = () => {
     if (hasNews) setOpen((o) => !o);
-    else setIdleLine((l) => (l ? null : pick(MARMALADE_IDLE)));
+    // half the time, offer a useful line (calories left); otherwise a bit of idle warmth
+    else setIdleLine((l) => (l ? null : (Math.random() < 0.5 && usefulIdle()) || pick(MARMALADE_IDLE)));
   };
   // keep the latest tap handler reachable from the gesture (which is built once)
   const tapRef = React.useRef(onTapCat);
@@ -248,7 +303,7 @@ export function Companion() {
             {current && current.action !== 'none' ? (
               <Pressable
                 onPress={() => {
-                  act(current.action);
+                  act(current.action, current.slot);
                   dismiss();
                 }}
                 style={{ paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.accent }}
