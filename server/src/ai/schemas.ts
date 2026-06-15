@@ -15,6 +15,12 @@ export const ParsedFoodSchema = z.object({
   protein_g: numOr(0),
   carb_g: numOr(0),
   fat_g: numOr(0),
+  // identity confidence — when not "high", the app can surface `clarify` to ask which she meant
+  confidence: z.enum(['high', 'medium', 'low']).catch('high'),
+  clarify: z
+    .object({ question: z.string().min(1), options: z.array(z.string()).catch([]) })
+    .nullable()
+    .catch(null),
 });
 export const ParsedFoodArraySchema = z.array(ParsedFoodSchema);
 // Object root for structured outputs (the API constrains the whole reply to this shape).

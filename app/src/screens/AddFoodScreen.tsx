@@ -402,6 +402,10 @@ function FindTab({ slot, date, onPick, onQuickLog }: { slot: string; date: strin
 
 // ── Describe (AI natural-language) ───────────────────────────────────────────
 
+interface Clarify {
+  question: string;
+  options: string[];
+}
 interface NlItem {
   name: string;
   grams: number;
@@ -409,9 +413,20 @@ interface NlItem {
   protein_100g: number;
   carb_100g: number;
   fat_100g: number;
+  // when the AI wasn't sure which food she meant, it asks — resolved by picking/keeping
+  clarify?: Clarify | null;
 }
 
-type ParsedFood = { name: string; grams: number; kcal: number; protein_g: number; carb_g: number; fat_g: number };
+type ParsedFood = {
+  name: string;
+  grams: number;
+  kcal: number;
+  protein_g: number;
+  carb_g: number;
+  fat_g: number;
+  confidence?: 'high' | 'medium' | 'low';
+  clarify?: Clarify | null;
+};
 
 // AI returns absolute grams + macros for the portion; we store per-100g so the amount stays editable.
 const parsedToItems = (parsed: ParsedFood[]): NlItem[] =>
@@ -422,6 +437,8 @@ const parsedToItems = (parsed: ParsedFood[]): NlItem[] =>
     protein_100g: p.grams > 0 ? Math.round((p.protein_g / p.grams) * 100) : 0,
     carb_100g: p.grams > 0 ? Math.round((p.carb_g / p.grams) * 100) : 0,
     fat_100g: p.grams > 0 ? Math.round((p.fat_g / p.grams) * 100) : 0,
+    // only keep a clarify when the model flagged uncertainty AND gave options to choose from
+    clarify: p.confidence !== 'high' && p.clarify && p.clarify.options.length ? p.clarify : null,
   }));
 
 // The editable parsed-items list shared by Describe (typed/photo) and Speak (voice): tap a name to
@@ -443,12 +460,19 @@ function ParsedItemsConfirm({
   const qc = useQueryClient();
   const [padIdx, setPadIdx] = useState<number | null>(null);
   const [replIdx, setReplIdx] = useState<number | null>(null);
+  const [replSeed, setReplSeed] = useState<string | null>(null);
   const pad = useNumberField('0');
 
   const setGrams = (i: number, g: number) => setItems((xs) => (xs ? xs.map((it, idx) => (idx === i ? { ...it, grams: g } : it)) : xs));
   const remove = (i: number) => setItems((xs) => (xs ? xs.filter((_, idx) => idx !== i) : xs));
+  // picking a real food clears the question too (it's now resolved)
   const replaceItem = (i: number, p: { name: string; kcal_100g: number; protein_100g: number; carb_100g: number; fat_100g: number }) =>
-    setItems((xs) => (xs ? xs.map((it, idx) => (idx === i ? { ...it, ...p } : it)) : xs));
+    setItems((xs) => (xs ? xs.map((it, idx) => (idx === i ? { ...it, ...p, clarify: null } : it)) : xs));
+  const clearClarify = (i: number) => setItems((xs) => (xs ? xs.map((it, idx) => (idx === i ? { ...it, clarify: null } : it)) : xs));
+  const openReplace = (i: number, seed?: string) => {
+    setReplSeed(seed ?? null);
+    setReplIdx(i);
+  };
   const openPad = (i: number) => {
     pad.reset(String(items[i].grams ?? 0));
     setPadIdx(i);
@@ -481,31 +505,50 @@ function ParsedItemsConfirm({
       <SectionLabel style={{ marginBottom: 8 }}>Found · tap a name to change it, grams to adjust</SectionLabel>
       <Card pad={6}>
         {items.map((it, i) => (
-          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: i === items.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
-            <Pressable onPress={() => setReplIdx(i)} style={{ flex: 1, minWidth: 0 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                <T w={800} size={15} numberOfLines={1} style={{ flexShrink: 1 }}>
-                  {it.name}
+          <View key={i} style={{ borderBottomWidth: i === items.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingTop: 12, paddingBottom: it.clarify ? 6 : 12 }}>
+              <Pressable onPress={() => openReplace(i)} style={{ flex: 1, minWidth: 0 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <T w={800} size={15} numberOfLines={1} style={{ flexShrink: 1 }}>
+                    {it.name}
+                  </T>
+                  <Icon name={it.clarify ? 'info' : 'edit'} size={13} color={it.clarify ? t.caution : t.text3} />
+                </View>
+                <T num w={700} size={12} color={t.text3}>
+                  {Math.round((it.kcal_100g * it.grams) / 100)} kcal
                 </T>
-                <Icon name="edit" size={13} color={t.text3} />
+              </Pressable>
+              <Pressable onPress={() => openPad(i)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: t.surface, borderWidth: 1.5, borderColor: t.hairline, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
+                <T num w={800} size={15}>
+                  {it.grams}
+                </T>
+                <T w={700} size={11} color={t.text3}>
+                  g
+                </T>
+              </Pressable>
+              <Pressable onPress={() => remove(i)} hitSlop={8}>
+                <T w={800} size={20} color={t.text3}>
+                  ×
+                </T>
+              </Pressable>
+            </View>
+            {it.clarify ? (
+              <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
+                <T w={700} size={12} color={t.accentPress} style={{ marginBottom: 8 }}>
+                  {it.clarify.question}
+                </T>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                  {it.clarify.options.map((o) => (
+                    <Chip key={o} onPress={() => openReplace(i, o)}>
+                      {o}
+                    </Chip>
+                  ))}
+                  <Chip soft={t.surface2} onPress={() => clearClarify(i)}>
+                    {`Keep “${it.name}”`}
+                  </Chip>
+                </View>
               </View>
-              <T num w={700} size={12} color={t.text3}>
-                {Math.round((it.kcal_100g * it.grams) / 100)} kcal
-              </T>
-            </Pressable>
-            <Pressable onPress={() => openPad(i)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: t.surface, borderWidth: 1.5, borderColor: t.hairline, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
-              <T num w={800} size={15}>
-                {it.grams}
-              </T>
-              <T w={700} size={11} color={t.text3}>
-                g
-              </T>
-            </Pressable>
-            <Pressable onPress={() => remove(i)} hitSlop={8}>
-              <T w={800} size={20} color={t.text3}>
-                ×
-              </T>
-            </Pressable>
+            ) : null}
           </View>
         ))}
       </Card>
@@ -549,10 +592,15 @@ function ParsedItemsConfirm({
 
       <ReplaceItemSheet
         item={replIdx != null ? (items[replIdx] ?? null) : null}
-        onClose={() => setReplIdx(null)}
+        seedText={replSeed}
+        onClose={() => {
+          setReplIdx(null);
+          setReplSeed(null);
+        }}
         onReplace={(p) => {
           if (replIdx != null) replaceItem(replIdx, p);
           setReplIdx(null);
+          setReplSeed(null);
         }}
       />
     </View>
@@ -712,10 +760,12 @@ function SpeakTab({ slot, date, onDone }: { slot: string; date: string; onDone: 
 // the correct one; its per-100g nutrition comes along and the amount she set is kept.
 function ReplaceItemSheet({
   item,
+  seedText,
   onClose,
   onReplace,
 }: {
   item: NlItem | null;
+  seedText?: string | null;
   onClose: () => void;
   onReplace: (p: { name: string; kcal_100g: number; protein_100g: number; carb_100g: number; fat_100g: number }) => void;
 }) {
@@ -723,8 +773,9 @@ function ReplaceItemSheet({
   const [text, setText] = useState('');
   const [q, setQ] = useState('');
   useEffect(() => {
-    if (item) setText(item.name); // prefill with the current name so she can tweak it
-  }, [item]);
+    // seed with a clarify option when she tapped one, else the item's current name to tweak
+    if (item) setText(seedText ?? item.name);
+  }, [item, seedText]);
   useEffect(() => {
     const id = setTimeout(() => setQ(text.trim()), 350);
     return () => clearTimeout(id);

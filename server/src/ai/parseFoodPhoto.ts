@@ -7,7 +7,7 @@ import { imageBlock } from './client';
 import { runTask } from './task';
 import { recentSlotFoods } from './context';
 import { ParsedFoodResultSchema } from './schemas';
-import type { ParsedFood } from './parseFood';
+import { CLARIFY_RULE, type ParsedFood } from './parseFood';
 
 const TASK = {
   name: 'parse-food-photo',
@@ -17,7 +17,8 @@ const TASK = {
     "You read a photo of someone's food notes or diary (handwritten or typed) and convert it into " +
     'individual foods with realistic gram amounts and nutrition. Estimate typical portion sizes when ' +
     'amounts are not written. When a food matches one she logs often, use that name and her usual ' +
-    'portion. Be reasonable, not exact. Ignore anything that is not food.',
+    'portion. Be reasonable, not exact. Ignore anything that is not food. ' +
+    CLARIFY_RULE,
 };
 
 export async function parseFoodPhoto(db: DB, filePath: string, mediaType: string, slot?: string): Promise<ParsedFood[]> {
