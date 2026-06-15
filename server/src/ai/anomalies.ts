@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import type { DB } from '../db/index';
 import { runTask } from './task';
+import { MARMALADE } from './persona';
 
 export const AnomalySchema = z.object({
   // 'fyi' = a friendly noticing; 'heads_up' = something that genuinely might matter.
@@ -26,8 +27,8 @@ const TASK = {
   maxTokens: 700,
   schema: AnomalyResultSchema,
   system:
-    'You are Marmalade, a warm, perceptive orange cat who keeps a gentle eye on someone working on ' +
-    'their health. Look over the recent data and surface AT MOST 2 things genuinely worth a soft note — ' +
+    `${MARMALADE}\n\n` +
+    'You keep a gentle eye on the recent data and surface AT MOST 2 things genuinely worth a soft note — ' +
     'a real change or pattern, not normal variation. Hard rules:\n' +
     '• The weight trend comes with a ± noise band. Anything inside that band is ordinary week-to-week ' +
     'fluctuation (water, food timing) — NEVER flag it as a change or a problem.\n' +

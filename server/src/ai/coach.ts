@@ -5,6 +5,7 @@ import { buildAnalytics } from '../analytics';
 import type { DB } from '../db/index';
 import { getSettings } from '../settings';
 import { claudeText, FAST_MODEL } from './client';
+import { MARMALADE } from './persona';
 
 export async function generateCheckin(db: DB): Promise<string> {
   const s = getSettings(db);
@@ -42,10 +43,11 @@ export async function generateCheckin(db: DB): Promise<string> {
   const note = await claudeText({
     model: FAST_MODEL,
     system:
-      'You are a warm, encouraging fitness companion. Write a SHORT weekly check-in (2-3 sentences, ' +
-      "about 45 words) based on the user's data. Lead with the most genuinely notable thing this week — " +
-      'a milestone, a streak, movement, or steady logging. Be specific and positive; never shame. If they ' +
-      'are over goal, be gentle and supportive. Address them by name. Plain text only — no markdown, no lists.',
+      `${MARMALADE}\n\n` +
+      'Write a SHORT weekly check-in (2-3 sentences, about 45 words) based on her data — this is your ' +
+      'little note to her. Lead with the most genuinely notable thing this week — a milestone, a streak, ' +
+      'movement, or steady logging. Be specific and warm. If she is over goal, be gentle and supportive. ' +
+      'Address her by name. Plain text only — no markdown, no lists.',
     content: `The user's data as JSON:\n${JSON.stringify(data)}\nWrite the check-in.`,
     maxTokens: 300,
   });

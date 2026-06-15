@@ -6,9 +6,10 @@ import { Image, Pressable, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, CelebrationModal, Icon, Screen, T, TextField } from '../components';
+import { Button, CelebrationModal, Icon, Screen, showToast, T, TextField } from '../components';
 import { api } from '../lib/api';
 import { appendImage } from '../lib/upload';
+import { WEIGH_IN_DONE, pick } from '../lib/encouragement';
 import { todayStr } from '../lib/date';
 import { fromDisplayWeight } from '../lib/units';
 import { useTheme } from '../theme';
@@ -53,6 +54,7 @@ export function LogWeightScreen({ navigation }: Props) {
       if (out.milestones && out.milestones.length) {
         setCelebrate(out.milestones[out.milestones.length - 1].threshold_lb);
       } else {
+        showToast(pick(WEIGH_IN_DONE));
         navigation.goBack();
       }
     } finally {
@@ -98,7 +100,7 @@ export function LogWeightScreen({ navigation }: Props) {
           visible
           kpi={`−${celebrate}`}
           title={`${celebrate} pounds down!`}
-          body="That's a real milestone — beautifully done. Keep showing up."
+          body="That's a real milestone — beautifully done. I'm purring over here 🐾"
           cta="Keep it up!"
           onClose={() => {
             setCelebrate(null);

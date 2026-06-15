@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, CalorieCalculator, Card, Icon, Screen, SectionLabel, SegmentedControl, showToast, T, TextField } from '../components';
+import { Button, CalorieCalculator, Card, CatSprite, Screen, SectionLabel, SegmentedControl, showToast, T, TextField } from '../components';
 import { api } from '../lib/api';
 import { fromDisplayWeight, toDisplayWeight, type Units } from '../lib/units';
 import { useTheme } from '../theme';
@@ -53,14 +53,14 @@ export function OnboardingScreen() {
   return (
     <Screen padTop={20}>
       <View style={{ alignItems: 'center', marginTop: 20, marginBottom: 18 }}>
-        <View style={{ width: 84, height: 84, borderRadius: 999, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
-          <Icon name="flame" size={40} color={t.accentPress} />
+        <View style={{ width: 96, height: 96, borderRadius: 999, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+          <CatSprite size={62} />
         </View>
         <T w={800} size={30} style={{ textAlign: 'center' }}>
-          Welcome to fitsheet
+          Hi, I&rsquo;m Marmalade
         </T>
         <T w={600} size={16} color={t.text2} style={{ textAlign: 'center', maxWidth: 320, lineHeight: 23, marginTop: 8 }}>
-          A couple of quick things and you&rsquo;re set. You can change any of it later in Settings.
+          I&rsquo;ll keep you company here — cheering you on and watching your numbers so you don&rsquo;t have to. A couple of quick things and we&rsquo;re set. 🐾
         </T>
       </View>
 

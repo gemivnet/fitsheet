@@ -308,7 +308,7 @@ export function HomeScreen() {
             visible
             kpi={`${d.milestone.threshold_lb}🔥`}
             title={`${d.milestone.threshold_lb} days in a row!`}
-            body={`${d.milestone.threshold_lb >= 30 ? 'A whole month' : 'A whole week'} of showing up, ${s.display_name} — that's how habits stick.`}
+            body={`${d.milestone.threshold_lb >= 30 ? 'A whole month' : 'A whole week'} of showing up, ${s.display_name} — that's how habits stick. I'm so proud of you 🐾`}
             cta="Keep going!"
             onClose={() => ackMilestone.mutate(d.milestone!.id)}
           />
@@ -317,7 +317,7 @@ export function HomeScreen() {
             visible
             kpi={`−${d.milestone.threshold_lb}`}
             title={`${d.milestone.threshold_lb} pounds down!`}
-            body={`Amazing work, ${s.display_name} — your trend just crossed another milestone. Keep showing up.`}
+            body={`Amazing work, ${s.display_name} — your trend just crossed another milestone. I knew you had it in you 🐾`}
             cta="Keep it up!"
             onClose={() => ackMilestone.mutate(d.milestone!.id)}
           />

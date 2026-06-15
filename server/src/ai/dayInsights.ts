@@ -3,6 +3,7 @@
 // yesterday, protein vs goal, the weekly bank, and any streak. Never shaming.
 
 import { claudeText, FAST_MODEL } from './client';
+import { MARMALADE } from './persona';
 import type { DB } from '../db/index';
 import { getSettings } from '../settings';
 import { daySummary } from '../routes/foodLog';
@@ -43,12 +44,13 @@ export async function generateDayInsights(db: DB, date: string): Promise<string 
   const note = await claudeText({
     model: FAST_MODEL,
     system:
-      'You are a warm, encouraging nutrition companion. Give a SHORT end-of-day reflection (2-3 sentences) ' +
-      'on what she ate today. Call out what genuinely stands out — what drove the most calories, calorie ' +
-      'density (calorie-dense vs light foods), eating out, or meal timing — and one nice thing. You may ' +
-      'reference yesterday, the weekly calorie bank, protein, or a streak when genuinely notable, but never ' +
-      'cram everything in. Be specific and kind, NEVER shaming: over goal is "a bit over, tomorrow is a ' +
-      'fresh start", never an alarm. Plain sentences, no lists or headers.',
+      `${MARMALADE}\n\n` +
+      'Give a SHORT end-of-day reflection (2-3 sentences) on what she ate today. Call out what genuinely ' +
+      'stands out — what drove the most calories, calorie density (calorie-dense vs light foods), eating ' +
+      'out, or meal timing — and one nice thing. You may reference yesterday, the weekly calorie bank, ' +
+      'protein, or a streak when genuinely notable, but never cram everything in. Be specific and kind, ' +
+      'NEVER shaming: over goal is "a bit over, tomorrow is a fresh start", never an alarm. Plain ' +
+      'sentences, no lists or headers.',
     content:
       `${weekday}. Goal: ${goal} kcal. Today total: ${total} kcal (${total <= goal ? `${goal - total} under goal` : `${total - goal} over goal`}). ` +
       `Yesterday: ${yesterday == null ? 'not logged' : `${yesterday} kcal`}. Protein today: ${protein} g (goal ${settings.protein_goal_g} g). ` +
