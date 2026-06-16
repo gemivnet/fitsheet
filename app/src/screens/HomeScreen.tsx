@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { applyNumberKey, BankLine, Button, CalorieRing, Card, CelebrationModal, Checkbox, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, T } from '../components';
 import { api, type Suggestion, type SupplementToday, type UsualMeal } from '../lib/api';
 import { DAY_UNDER_GOAL, FIRST_LOG_OF_DAY, pick, WORKOUT_DONE } from '../lib/encouragement';
-import { slotForNow, todayStr } from '../lib/date';
+import { addDaysStr, slotForNow, todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
 import { useTheme } from '../theme';
 import type { RootTabParams } from '../navigation/types';
@@ -265,40 +265,51 @@ export function HomeScreen() {
             )}
           </Card>
 
-          <Card pad={20} style={{ flex: 1 }}>
-            <SectionLabel style={{ marginBottom: 14 }}>Today&rsquo;s workout</SectionLabel>
-            {d.workout ? (
-              <>
-                <T w={800} size={18} style={{ marginBottom: 4 }} numberOfLines={2}>
-                  {d.workout.title}
-                </T>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 }}>
-                  <Icon name="activity" size={15} stroke={2.4} color={t.text2} />
-                  <T w={700} size={13} color={t.text2}>
-                    {d.workout.planned_minutes ? `${d.workout.planned_minutes} min` : 'Workout'}
-                  </T>
-                </View>
-                <View style={{ flexDirection: 'row', gap: 9 }}>
-                  {d.workout.external_url ? (
-                    <View style={{ flex: 1 }}>
-                      <Button variant="soft" icon="link" size="sm" full onPress={() => Linking.openURL(d.workout!.external_url!)}>
-                        Open
-                      </Button>
+          {(() => {
+            // the dashboard surfaces the next upcoming workout (today OR tomorrow) — label it by its
+            // real day so a workout planned for tomorrow doesn't read as today's.
+            const tomorrow = d.workout?.scheduled_date === addDaysStr(todayStr(), 1);
+            return (
+              <Card pad={20} style={{ flex: 1 }}>
+                <SectionLabel style={{ marginBottom: 14 }}>{tomorrow ? 'Tomorrow’s workout' : 'Today’s workout'}</SectionLabel>
+                {d.workout ? (
+                  <>
+                    <T w={800} size={18} style={{ marginBottom: 4 }} numberOfLines={2}>
+                      {d.workout.title}
+                    </T>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+                      <Icon name="activity" size={15} stroke={2.4} color={t.text2} />
+                      <T w={700} size={13} color={t.text2}>
+                        {tomorrow ? 'Tomorrow' : d.workout.planned_minutes ? `${d.workout.planned_minutes} min` : 'Workout'}
+                        {tomorrow && d.workout.planned_minutes ? ` · ${d.workout.planned_minutes} min` : ''}
+                      </T>
                     </View>
-                  ) : null}
-                  <View style={{ flex: 1 }}>
-                    <Button variant="success" icon="check" size="sm" full onPress={() => complete.mutate(d.workout!.id)}>
-                      Done
-                    </Button>
-                  </View>
-                </View>
-              </>
-            ) : (
-              <T w={700} size={14} color={t.text3} style={{ paddingVertical: 8 }}>
-                No workout planned today. Rest up or add one in Activity.
-              </T>
-            )}
-          </Card>
+                    <View style={{ flexDirection: 'row', gap: 9 }}>
+                      {d.workout.external_url ? (
+                        <View style={{ flex: 1 }}>
+                          <Button variant="soft" icon="link" size="sm" full onPress={() => Linking.openURL(d.workout!.external_url!)}>
+                            Open
+                          </Button>
+                        </View>
+                      ) : null}
+                      {/* don't let a future workout be marked done from Home */}
+                      {!tomorrow ? (
+                        <View style={{ flex: 1 }}>
+                          <Button variant="success" icon="check" size="sm" full onPress={() => complete.mutate(d.workout!.id)}>
+                            Done
+                          </Button>
+                        </View>
+                      ) : null}
+                    </View>
+                  </>
+                ) : (
+                  <T w={700} size={14} color={t.text3} style={{ paddingVertical: 8 }}>
+                    No workout planned today. Rest up or add one in Activity.
+                  </T>
+                )}
+              </Card>
+            );
+          })()}
         </View>
       </Screen>
 
