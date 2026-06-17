@@ -1,7 +1,7 @@
 // HomeScreen.tsx — the live dashboard. Tap a favorite to log it; the ring fills + a toast confirms.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -10,6 +10,7 @@ import { api, type Suggestion, type SupplementToday, type UsualMeal } from '../l
 import { DAY_UNDER_GOAL, FIRST_LOG_OF_DAY, pick, WORKOUT_DONE } from '../lib/encouragement';
 import { addDaysStr, slotForNow, todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
+import { openUrl } from '../lib/url';
 import { useTheme } from '../theme';
 import type { RootTabParams } from '../navigation/types';
 
@@ -287,7 +288,7 @@ export function HomeScreen() {
                     <View style={{ flexDirection: 'row', gap: 9 }}>
                       {d.workout.external_url ? (
                         <View style={{ flex: 1 }}>
-                          <Button variant="soft" icon="link" size="sm" full onPress={() => Linking.openURL(d.workout!.external_url!)}>
+                          <Button variant="soft" icon="link" size="sm" full onPress={() => openUrl(d.workout!.external_url)}>
                             Open
                           </Button>
                         </View>

@@ -1,7 +1,7 @@
 // ActivityScreen.tsx — Workouts (plan / open link / complete / ad-hoc) + Walks (preset one-tap / manual).
 
 import React, { useCallback, useMemo, useState } from 'react';
-import { Linking, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Chip, EmptyState, Icon, Screen, SectionLabel, SegmentedControl, Sheet, showToast, T, TextField } from '../components';
@@ -9,6 +9,7 @@ import { api, type WalkLog, type WalkPreset, type Workout } from '../lib/api';
 import { confirmAction } from '../lib/dialog';
 import { estWalkKcal, estWalkMinutes } from '../lib/activity';
 import { addDaysStr, isToday, prettyDate, todayStr } from '../lib/date';
+import { openUrl } from '../lib/url';
 import { useTheme } from '../theme';
 
 export function ActivityScreen() {
@@ -41,6 +42,14 @@ function Workouts() {
   };
   const complete = useMutation({ mutationFn: (id: number) => api.workouts.complete(id), onSuccess: invalidate });
   const remove = useMutation({ mutationFn: (id: number) => api.workouts.remove(id), onSuccess: invalidate });
+  // move a missed workout to today instead of losing it to "did it / skip"
+  const moveToday = useMutation({
+    mutationFn: (id: number) => api.workouts.update(id, { scheduled_date: todayStr() }),
+    onSuccess: () => {
+      invalidate();
+      showToast('Moved to today');
+    },
+  });
 
   // planned workouts whose day has passed shouldn't haunt the main list forever
   const today = todayStr();
@@ -54,23 +63,31 @@ function Workouts() {
           <SectionLabel style={{ marginBottom: 8 }}>Catch up</SectionLabel>
           <Card pad={6}>
             {overdue.map((w, i) => (
-              <View key={w.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: i === overdue.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <T w={700} size={15} color={t.text2} numberOfLines={1}>
-                    {w.title}
-                  </T>
-                  <T w={600} size={12} color={t.text3}>
-                    was {prettyDate(w.scheduled_date!)}
-                  </T>
+              <View key={w.id} style={{ padding: 12, borderBottomWidth: i === overdue.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
+                <T w={700} size={15} color={t.text2} numberOfLines={1}>
+                  {w.title}
+                </T>
+                <T w={600} size={12} color={t.text3}>
+                  was {prettyDate(w.scheduled_date!)}
+                </T>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, rowGap: 8, marginTop: 10 }}>
+                  {w.external_url ? (
+                    <Button variant="soft" icon="link" size="sm" onPress={() => openUrl(w.external_url)}>
+                      Open
+                    </Button>
+                  ) : null}
+                  <Button variant="soft" icon="activity" size="sm" onPress={() => moveToday.mutate(w.id)}>
+                    Move to today
+                  </Button>
+                  <Button variant="success" icon="check" size="sm" onPress={() => complete.mutate(w.id)}>
+                    Did it
+                  </Button>
+                  <Pressable onPress={() => confirmAction('Skip this workout?', w.title, () => remove.mutate(w.id), { confirmText: 'Skip' })} hitSlop={8} style={{ marginLeft: 'auto' }}>
+                    <T w={800} size={13} color={t.text3}>
+                      Skip
+                    </T>
+                  </Pressable>
                 </View>
-                <Button variant="success" icon="check" size="sm" onPress={() => complete.mutate(w.id)}>
-                  Did it
-                </Button>
-                <Pressable onPress={() => confirmAction('Skip this workout?', w.title, () => remove.mutate(w.id), { confirmText: 'Skip' })} hitSlop={8}>
-                  <T w={800} size={13} color={t.text3}>
-                    Skip
-                  </T>
-                </Pressable>
               </View>
             ))}
           </Card>
@@ -110,6 +127,8 @@ function WorkoutCard({ w, onComplete, onRemove, onEdit }: { w: Workout; onComple
   const done = !!w.completed_at;
   return (
     <Card pad={18} style={{ marginBottom: 12 }}>
+      {/* tap the header to edit; the action buttons live OUTSIDE this Pressable so a tap on
+          "Open"/"Complete" fires the button, not the editor */}
       <Pressable onPress={onEdit} onLongPress={() => confirmAction('Remove workout?', w.title, onRemove, { confirmText: 'Remove', destructive: true })} delayLongPress={300}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flex: 1, paddingRight: 10 }}>
@@ -131,23 +150,23 @@ function WorkoutCard({ w, onComplete, onRemove, onEdit }: { w: Workout; onComple
             </View>
           ) : null}
         </View>
-        {!done ? (
-          <View style={{ flexDirection: 'row', gap: 9, marginTop: 14 }}>
-            {w.external_url ? (
-              <View style={{ flex: 1 }}>
-                <Button variant="soft" icon="link" size="sm" full onPress={() => Linking.openURL(w.external_url!)}>
-                  Open
-                </Button>
-              </View>
-            ) : null}
+      </Pressable>
+      {!done ? (
+        <View style={{ flexDirection: 'row', gap: 9, marginTop: 14 }}>
+          {w.external_url ? (
             <View style={{ flex: 1 }}>
-              <Button variant="success" icon="check" size="sm" full onPress={onComplete}>
-                Complete
+              <Button variant="soft" icon="link" size="sm" full onPress={() => openUrl(w.external_url)}>
+                Open
               </Button>
             </View>
+          ) : null}
+          <View style={{ flex: 1 }}>
+            <Button variant="success" icon="check" size="sm" full onPress={onComplete}>
+              Complete
+            </Button>
           </View>
-        ) : null}
-      </Pressable>
+        </View>
+      ) : null}
     </Card>
   );
 }
