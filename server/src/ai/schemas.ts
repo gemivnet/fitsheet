@@ -68,6 +68,11 @@ export const MealSuggestionSchema = z.object({
 });
 export const MealSuggestionsSchema = z.object({ suggestions: z.array(MealSuggestionSchema) });
 
+// ── shopping list (group a plan's ingredients by aisle) ──────────────────────
+export const ShoppingListSchema = z.object({
+  sections: z.array(z.object({ name: z.string().min(1), items: z.array(z.string()).catch([]) })),
+});
+
 // ── meal plan ────────────────────────────────────────────────────────────────
 export const PlannedMealSchema = z.object({
   slot: z.enum(['breakfast', 'lunch', 'dinner', 'snacks']).catch('snacks'),

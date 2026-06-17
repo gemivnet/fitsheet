@@ -539,6 +539,9 @@ export const api = {
     daySummary: (date: string) => req<{ note: string | null }>('GET', `/api/ai/day-summary?date=${date}`),
     analyticsNote: (date: string) => req<{ note: string | null }>('GET', `/api/ai/analytics-note?date=${date}`),
     suggestMeal: (slot: string, date: string) => req<{ suggestions: MealSuggestion[] }>('GET', `/api/ai/suggest-meal?slot=${slot}&date=${date}`),
+    generateRecipe: (p: { kcal?: number; protein_g?: number; useRemaining?: boolean; craving?: string; date?: string }) =>
+      req<{ recipe: ParsedRecipe | null }>('POST', '/api/ai/generate-recipe', p),
+    shoppingList: (ingredients: string[]) => req<{ sections: { name: string; items: string[] }[] }>('POST', '/api/ai/shopping-list', { ingredients }),
     anomalies: (date: string) => req<{ anomalies: Anomaly[] }>('GET', `/api/ai/anomalies?date=${date}`),
     chat: (messages: ChatTurn[], date: string) => req<{ reply: string; action: ChatAction | null }>('POST', '/api/ai/chat', { messages, date }),
     refreshCheckin: () => req<{ note: string | null }>('POST', '/api/ai/checkin/refresh'),

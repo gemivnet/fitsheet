@@ -13,6 +13,8 @@ import { complete } from '../ai/complete';
 import { generateDayInsights } from '../ai/dayInsights';
 import { explainAnalytics } from '../ai/explainAnalytics';
 import { streamSuggestMeals, suggestMeals } from '../ai/suggestMeal';
+import { generateRecipe } from '../ai/generateRecipe';
+import { buildShoppingList } from '../ai/shoppingList';
 import { type Anomaly, generateAnomalies } from '../ai/anomalies';
 import { marmaladeReply } from '../ai/chat';
 import type { ChatTurn } from '../ai/client';
@@ -21,7 +23,7 @@ import { buildCustomItem, getRestaurantMenu, loadRestaurantItems } from '../ai/r
 import { hasAnthropicKey } from '../config';
 import type { DB } from '../db/index';
 import { upload } from '../upload';
-import { isDayStr, nowIso, titleCase, todayStr } from '../util';
+import { finiteNum, isDayStr, nowIso, titleCase, todayStr } from '../util';
 
 const NO_KEY = { error: 'no_api_key' };
 
@@ -184,6 +186,35 @@ export function aiRouter(db: DB): Router {
       res.json({ suggestions: await suggestMeals(db, { date, slot }) });
     } catch (e) {
       aiFail(res, 'suggest_meal', e);
+    }
+  });
+
+  // ── cook from a macro target / craving ──
+  r.post('/generate-recipe', async (req, res) => {
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    const b = req.body ?? {};
+    try {
+      const recipe = await generateRecipe(db, {
+        kcal: finiteNum(b.kcal) ?? undefined,
+        protein_g: finiteNum(b.protein_g) ?? undefined,
+        useRemaining: !!b.useRemaining,
+        craving: typeof b.craving === 'string' ? b.craving : undefined,
+        date: isDayStr(b.date) ? b.date : todayStr(),
+      });
+      res.json({ recipe });
+    } catch (e) {
+      aiFail(res, 'generate_recipe', e);
+    }
+  });
+
+  // ── shopping list from a set of ingredient lines ──
+  r.post('/shopping-list', async (req, res) => {
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    const ingredients = Array.isArray(req.body?.ingredients) ? req.body.ingredients.map((x: any) => String(x)) : [];
+    try {
+      res.json(await buildShoppingList(db, ingredients));
+    } catch (e) {
+      aiFail(res, 'shopping_list', e);
     }
   });
 

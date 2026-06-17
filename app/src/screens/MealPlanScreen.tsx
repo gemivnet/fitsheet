@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, EmptyState, Icon, NumberPad, Screen, ScreenHeader, SectionLabel, SegmentedControl, Sheet, showToast, T, TextField, useNumberField } from '../components';
+import { Button, Card, Checkbox, Chip, EmptyState, Icon, NumberPad, Screen, ScreenHeader, SectionLabel, SegmentedControl, Sheet, showToast, T, TextField, useNumberField } from '../components';
 import { api, apiBase, type MealPlan, type PlannedMeal } from '../lib/api';
 import { todayStr } from '../lib/date';
 import { useTheme } from '../theme';
@@ -28,6 +28,7 @@ export function MealPlanScreen() {
   const [addDay, setAddDay] = useState<number | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [streamNames, setStreamNames] = useState<string[]>([]);
+  const [shopOpen, setShopOpen] = useState(false);
 
   const setPlan = (p: MealPlan | null) => qc.setQueryData(['meal-plan'], { plan: p });
   const save = useMutation({ mutationFn: (p: MealPlan) => api.ai.mealPlan.save(p), onSuccess: (out) => setPlan(out.plan) });
@@ -148,6 +149,14 @@ export function MealPlanScreen() {
         ) : null}
       </Card>
 
+      {plan?.days?.length && !streaming ? (
+        <View style={{ marginBottom: 16 }}>
+          <Button variant="soft" icon="food" full onPress={() => setShopOpen(true)}>
+            Shopping list
+          </Button>
+        </View>
+      ) : null}
+
       {/* live progress — meals pop in as they're generated */}
       {streaming ? (
         <Card pad={16} style={{ marginBottom: 16 }}>
@@ -240,7 +249,58 @@ export function MealPlanScreen() {
           setAddDay(null);
         }}
       />
+      <ShoppingListSheet visible={shopOpen} ingredients={plan ? plan.days.flatMap((d) => d.meals).flatMap((m) => m.ingredients ?? []) : []} onClose={() => setShopOpen(false)} />
     </Screen>
+  );
+}
+
+// Aisle-grouped, checkable shopping list built from the plan's ingredients.
+function ShoppingListSheet({ visible, ingredients, onClose }: { visible: boolean; ingredients: string[]; onClose: () => void }) {
+  const t = useTheme();
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const list = useQuery({
+    queryKey: ['shopping-list', ingredients.join('|')],
+    queryFn: () => api.ai.shoppingList(ingredients),
+    enabled: visible && ingredients.length > 0,
+    staleTime: 60 * 60 * 1000,
+  });
+  const toggle = (key: string) =>
+    setChecked((s) => {
+      const n = new Set(s);
+      n.has(key) ? n.delete(key) : n.add(key);
+      return n;
+    });
+  const sections = list.data?.sections ?? [];
+  return (
+    <Sheet visible={visible} onClose={onClose} title="Shopping list">
+      {list.isLoading ? (
+        <T w={700} size={14} color={t.text2} style={{ paddingVertical: 8 }}>
+          Building your list…
+        </T>
+      ) : sections.length ? (
+        sections.map((sec) => (
+          <View key={sec.name} style={{ marginBottom: 14 }}>
+            <SectionLabel style={{ marginBottom: 8 }}>{sec.name}</SectionLabel>
+            {sec.items.map((it, i) => {
+              const key = `${sec.name}:${it}`;
+              const on = checked.has(key);
+              return (
+                <Pressable key={key} onPress={() => toggle(key)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9, borderBottomWidth: i === sec.items.length - 1 ? 0 : 1, borderBottomColor: t.hairline }}>
+                  <Checkbox checked={on} size={22} />
+                  <T w={700} size={15} color={on ? t.text3 : t.text} style={{ flex: 1, textDecorationLine: on ? 'line-through' : 'none' }}>
+                    {it}
+                  </T>
+                </Pressable>
+              );
+            })}
+          </View>
+        ))
+      ) : (
+        <T w={600} size={14} color={t.text3} style={{ paddingVertical: 8 }}>
+          {list.isError ? 'Couldn’t build the list — try again.' : 'No ingredients to shop for yet.'}
+        </T>
+      )}
+    </Sheet>
   );
 }
 

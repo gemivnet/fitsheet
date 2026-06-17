@@ -1,7 +1,7 @@
 // RecipesScreen.tsx — a browsable gallery of low-cal meal ideas with approx calories & cook time.
 
 import React, { useCallback, useState } from 'react';
-import { Image, Pressable, View } from 'react-native';
+import { Image, Pressable, Switch, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -217,8 +217,13 @@ function RecipeForm({ visible, initial, onClose, onSaved }: { visible: boolean; 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [paste, setPaste] = useState('');
   const [url, setUrl] = useState('');
-  const [source, setSource] = useState('text'); // text | link | pdf
+  const [source, setSource] = useState('text'); // text | link | pdf | create
   const [parsing, setParsing] = useState(false);
+  // "create" (cook from a target) fields
+  const [genKcal, setGenKcal] = useState('');
+  const [genProtein, setGenProtein] = useState('');
+  const [useRemaining, setUseRemaining] = useState(false);
+  const [craving, setCraving] = useState('');
 
   // seed from the recipe being edited each time the sheet opens
   React.useEffect(() => {
@@ -253,7 +258,19 @@ function RecipeForm({ visible, initial, onClose, onSaved }: { visible: boolean; 
     if (source === 'link' && !url.trim()) return;
     setParsing(true);
     try {
-      if (source === 'link') {
+      if (source === 'create') {
+        applyRecipe(
+          (
+            await api.ai.generateRecipe({
+              kcal: genKcal ? Number(genKcal) : undefined,
+              protein_g: genProtein ? Number(genProtein) : undefined,
+              useRemaining,
+              craving: craving.trim() || undefined,
+              date: todayStr(),
+            })
+          ).recipe,
+        );
+      } else if (source === 'link') {
         applyRecipe((await api.ai.parseRecipeUrl(url.trim())).recipe);
       } else if (source === 'pdf') {
         const res = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true });
@@ -317,20 +334,40 @@ function RecipeForm({ visible, initial, onClose, onSaved }: { visible: boolean; 
         <>
           <SectionLabel style={{ marginBottom: 6 }}>Import from</SectionLabel>
           <View style={{ marginBottom: 12 }}>
-            <SegmentedControl options={['text', 'link', 'pdf']} value={source} onChange={setSource} labels={{ text: 'Text', link: 'Link', pdf: 'PDF' }} />
+            <SegmentedControl options={['text', 'link', 'pdf', 'create']} value={source} onChange={setSource} labels={{ text: 'Text', link: 'Link', pdf: 'PDF', create: 'Create' }} />
           </View>
           {source === 'text' ? (
             <TextField label="Paste a recipe" value={paste} onChangeText={setPaste} placeholder="Paste ingredients & steps, then auto-fill" multiline />
           ) : source === 'link' ? (
             <TextField label="Recipe URL" value={url} onChangeText={setUrl} placeholder="https://…" />
-          ) : (
+          ) : source === 'pdf' ? (
             <T w={600} size={13} color={t.text3} style={{ marginBottom: 12 }}>
               Pick a PDF and Marmalade will read the recipe out of it.
             </T>
+          ) : (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <T w={700} size={14} color={t.text2}>
+                  Use what I have left today
+                </T>
+                <Switch value={useRemaining} onValueChange={setUseRemaining} trackColor={{ true: t.accent }} />
+              </View>
+              {!useRemaining ? (
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <TextField label="Target calories" value={genKcal} onChangeText={setGenKcal} keyboardType="numeric" suffix="kcal" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <TextField label="Protein (optional)" value={genProtein} onChangeText={setGenProtein} keyboardType="numeric" suffix="g" />
+                  </View>
+                </View>
+              ) : null}
+              <TextField label="Craving (optional)" value={craving} onChangeText={setCraving} placeholder="e.g. something cozy with chicken" />
+            </>
           )}
           <View style={{ marginBottom: 18 }}>
             <Button variant="soft" icon="star" full onPress={autofill}>
-              {parsing ? 'Reading…' : source === 'pdf' ? 'Pick a PDF & auto-fill' : source === 'link' ? 'Fetch & auto-fill' : 'Auto-fill with AI'}
+              {parsing ? 'Cooking up an idea…' : source === 'pdf' ? 'Pick a PDF & auto-fill' : source === 'link' ? 'Fetch & auto-fill' : source === 'create' ? 'Create with AI' : 'Auto-fill with AI'}
             </Button>
           </View>
         </>
