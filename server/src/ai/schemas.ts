@@ -35,6 +35,21 @@ export const ParsedRecipeSchema = z.object({
   steps: z.string().nullable().catch(null),
 });
 
+// ── "what should I eat?" suggestions ─────────────────────────────────────────
+export const MealSuggestionSchema = z.object({
+  name: z.string().min(1),
+  slot: z.enum(['breakfast', 'lunch', 'dinner', 'snacks']).catch('dinner'),
+  grams: numOr(0),
+  kcal: num,
+  protein_g: numOr(0),
+  carb_g: numOr(0),
+  fat_g: numOr(0),
+  rationale: z.string().catch(''),
+  source: z.enum(['usual', 'recipe', 'new']).catch('new'),
+  ingredients: z.array(z.string()).catch([]),
+});
+export const MealSuggestionsSchema = z.object({ suggestions: z.array(MealSuggestionSchema) });
+
 // ── meal plan ────────────────────────────────────────────────────────────────
 export const PlannedMealSchema = z.object({
   slot: z.enum(['breakfast', 'lunch', 'dinner', 'snacks']).catch('snacks'),

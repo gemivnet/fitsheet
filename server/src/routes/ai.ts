@@ -12,6 +12,7 @@ import { claudeStream, extractJson } from '../ai/client';
 import { complete } from '../ai/complete';
 import { generateDayInsights } from '../ai/dayInsights';
 import { explainAnalytics } from '../ai/explainAnalytics';
+import { streamSuggestMeals, suggestMeals } from '../ai/suggestMeal';
 import { type Anomaly, generateAnomalies } from '../ai/anomalies';
 import { marmaladeReply } from '../ai/chat';
 import type { ChatTurn } from '../ai/client';
@@ -152,6 +153,37 @@ export function aiRouter(db: DB): Router {
       res.json({ note });
     } catch {
       res.json({ note: cached?.date === date ? cached.note : null });
+    }
+  });
+
+  // ── "what should I eat?" — on-demand meal suggestions for the remaining budget ──
+  r.post('/suggest-meal-stream', async (req, res) => {
+    const date = isDayStr(req.body?.date) ? req.body.date : todayStr();
+    const slot = String(req.body?.slot ?? 'dinner');
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+    const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
+    try {
+      const all = await streamSuggestMeals(db, { date, slot }, (s) => send({ suggestion: s }));
+      send({ done: true, count: all.length });
+    } catch (e) {
+      console.warn('[ai] suggest-meal stream failed:', e);
+      send({ error: 'suggest_failed' });
+    } finally {
+      res.end();
+    }
+  });
+  r.get('/suggest-meal', async (req, res) => {
+    if (!hasAnthropicKey()) return res.status(503).json(NO_KEY);
+    const date = isDayStr(req.query.date) ? req.query.date : todayStr();
+    const slot = String(req.query.slot ?? 'dinner');
+    try {
+      res.json({ suggestions: await suggestMeals(db, { date, slot }) });
+    } catch (e) {
+      aiFail(res, 'suggest_meal', e);
     }
   });
 

@@ -5,7 +5,7 @@ import { Pressable, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { applyNumberKey, BankLine, Button, CalorieRing, Card, CelebrationModal, Checkbox, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, T } from '../components';
+import { applyNumberKey, BankLine, Button, CalorieRing, Card, CelebrationModal, Checkbox, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, SuggestMealSheet, T } from '../components';
 import { api, type Suggestion, type SupplementToday, type UsualMeal } from '../lib/api';
 import { DAY_UNDER_GOAL, FIRST_LOG_OF_DAY, pick, WORKOUT_DONE } from '../lib/encouragement';
 import { addDaysStr, slotForNow, todayStr } from '../lib/date';
@@ -30,6 +30,7 @@ export function HomeScreen() {
 
   const dash = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
   const curSlot = slotForNow();
+  const [suggestOpen, setSuggestOpen] = useState(false);
   const usual = useQuery({ queryKey: ['usual', curSlot, todayStr()], queryFn: () => api.foodLog.usual(curSlot, todayStr()) });
 
   // End-of-day recap — only fetch (and generate) once dinner's logged or it's evening, with food in.
@@ -165,6 +166,15 @@ export function HomeScreen() {
           </View>
           {banking && (today.bank_week !== 0 || today.bank_snoozed) ? <BankLine day={today} onSnooze={(on) => snooze.mutate(on)} /> : null}
         </Card>
+
+        {/* AI decision help — only when there's a meaningful budget left */}
+        {remaining > 150 ? (
+          <View style={{ marginBottom: 16 }}>
+            <Button variant="soft" icon="food" full onPress={() => setSuggestOpen(true)}>
+              What should I eat? ({remaining} kcal left)
+            </Button>
+          </View>
+        ) : null}
 
         {/* today's meals — split by time of day, each with a "complete" tick */}
         <Card pad={20} style={{ marginBottom: 16 }}>
@@ -335,6 +345,8 @@ export function HomeScreen() {
           />
         )
       ) : null}
+
+      <SuggestMealSheet visible={suggestOpen} slot={curSlot} date={todayStr()} onClose={() => setSuggestOpen(false)} />
     </View>
   );
 }

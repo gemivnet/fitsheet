@@ -31,3 +31,4 @@ export { BankLine } from './BankLine';
 export { InfoDot, type InfoTopic } from './InfoSheet';
 export { Companion, CatSprite, type CompanionMessage } from './Marmalade';
 export { CalorieCalculator } from './CalorieCalculator';
+export { SuggestMealSheet } from './SuggestMealSheet';
