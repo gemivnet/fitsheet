@@ -38,3 +38,24 @@ export function markNudgeSeen(kind: string): void {
     /* ignore */
   }
 }
+
+// Dismissed message ids, remembered for the day so the same thing doesn't pop up again after a
+// reload. Reset automatically when the date rolls over.
+const DISMISS_KEY = 'marmalade-dismissed';
+export function loadDismissed(): Set<string> {
+  try {
+    const raw = window.localStorage?.getItem(DISMISS_KEY);
+    if (!raw) return new Set();
+    const o = JSON.parse(raw) as { date?: string; ids?: string[] };
+    return o?.date === todayStr() ? new Set(o.ids ?? []) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+export function saveDismissed(ids: Set<string>): void {
+  try {
+    window.localStorage?.setItem(DISMISS_KEY, JSON.stringify({ date: todayStr(), ids: [...ids] }));
+  } catch {
+    /* ignore */
+  }
+}

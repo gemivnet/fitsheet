@@ -15,7 +15,7 @@ import { Icon } from './Icon';
 import { T } from './primitives';
 import { api } from '../lib/api';
 import { DAY_OVER_GOAL_GENTLE, MARMALADE_IDLE, pick } from '../lib/encouragement';
-import { markNudgeSeen, nudgeSeenToday, nudgesEnabled } from '../lib/nudges';
+import { loadDismissed, markNudgeSeen, nudgeSeenToday, nudgesEnabled, saveDismissed } from '../lib/nudges';
 import { slotForNow, todayStr } from '../lib/date';
 import { navigate, navigationRef } from '../navigation/ref';
 import { useTheme } from '../theme';
@@ -163,7 +163,8 @@ export function Companion() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const messages = useCompanionMessages();
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  // seed from today's persisted dismissals so the same note doesn't return after a reload
+  const [dismissed, setDismissed] = useState<Set<string>>(loadDismissed);
   const [open, setOpen] = useState(true);
   const [idleLine, setIdleLine] = useState<string | null>(null);
 
@@ -231,7 +232,15 @@ export function Companion() {
     return `${rem} kcal left for today. You’ve got this ✨`;
   };
 
-  const dismiss = () => current && setDismissed((s) => new Set(s).add(current.id));
+  // dismissals persist for the day (localStorage), so a dismissed note stays gone across reloads
+  const addDismissed = (ids: string[]) =>
+    setDismissed((s) => {
+      const next = new Set([...s, ...ids]);
+      saveDismissed(next);
+      return next;
+    });
+  const dismiss = () => current && addDismissed([current.id]);
+  const dismissAll = () => addDismissed(pending.map((m) => m.id));
   const onTapCat = () => {
     if (hasNews) setOpen((o) => !o);
     // half the time, offer a useful line (calories left); otherwise a bit of idle warmth
@@ -284,7 +293,7 @@ export function Companion() {
   if (route === 'MarmaladeChat') return null;
 
   const openChat = () => {
-    setDismissed((s) => new Set([...s, ...pending.map((m) => m.id)])); // engaging directly clears the queue
+    addDismissed(pending.map((m) => m.id)); // engaging directly clears the queue (for the day)
     navigate('More', { screen: 'MarmaladeChat' });
   };
   return (
@@ -292,9 +301,16 @@ export function Companion() {
       {bubble && (open || !current) ? (
         <View style={[{ maxWidth: 264, backgroundColor: t.surface, borderRadius: 18, padding: 14, marginBottom: 6, borderWidth: 1, borderColor: t.hairline }, t.shadowSm]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-            <T w={800} size={13} color={bubble.heads ? t.caution : t.accentPress}>
+            <T w={800} size={13} color={bubble.heads ? t.caution : t.accentPress} style={{ flex: 1 }} numberOfLines={1}>
               {bubble.title}
             </T>
+            {current && pending.length > 1 ? (
+              <Pressable onPress={dismissAll} hitSlop={8}>
+                <T w={800} size={12} color={t.text3}>
+                  Dismiss all ({pending.length})
+                </T>
+              </Pressable>
+            ) : null}
           </View>
           <T w={600} size={14} color={t.text2} style={{ lineHeight: 20 }}>
             {bubble.message}
