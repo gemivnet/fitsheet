@@ -516,6 +516,7 @@ export const api = {
     parseRecipePdf: (form: FormData) => req<{ recipe: ParsedRecipe | null; error?: string }>('POST', '/api/ai/parse-recipe-pdf', form),
     checkin: () => req<{ note: string | null }>('GET', '/api/ai/checkin'),
     daySummary: (date: string) => req<{ note: string | null }>('GET', `/api/ai/day-summary?date=${date}`),
+    analyticsNote: (date: string) => req<{ note: string | null }>('GET', `/api/ai/analytics-note?date=${date}`),
     anomalies: (date: string) => req<{ anomalies: Anomaly[] }>('GET', `/api/ai/anomalies?date=${date}`),
     chat: (messages: ChatTurn[], date: string) => req<{ reply: string }>('POST', '/api/ai/chat', { messages, date }),
     refreshCheckin: () => req<{ note: string | null }>('POST', '/api/ai/checkin/refresh'),

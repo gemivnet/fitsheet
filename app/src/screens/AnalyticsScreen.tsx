@@ -1,10 +1,10 @@
 // AnalyticsScreen.tsx — the "nerdy" tab: smoothed trend, empirical TDEE, rate, goal ETA, adherence.
 
-import React, { useCallback } from 'react';
-import { View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { Pressable, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Icon, InfoDot, type InfoTopic, ProgressBar, Screen, ScreenHeader, SectionLabel, T, WeightChart, type WeightPoint } from '../components';
+import { Card, CatSprite, Icon, InfoDot, type InfoTopic, ProgressBar, Screen, ScreenHeader, SectionLabel, T, WeightChart, type WeightPoint } from '../components';
 import { api } from '../lib/api';
 import { prettyDate, todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
@@ -17,6 +17,10 @@ export function AnalyticsScreen() {
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings.get });
   const dining = useQuery({ queryKey: ['dining-stats'], queryFn: () => api.foodLog.diningStats(todayStr()) });
   useFocusEffect(useCallback(() => void a.refetch(), [a.refetch]));
+
+  // on-demand plain-language read (cached per day server-side, so only one real call/day)
+  const [explain, setExplain] = useState(false);
+  const note = useQuery({ queryKey: ['analytics-note', todayStr()], queryFn: () => api.ai.analyticsNote(todayStr()), enabled: explain, staleTime: 60 * 60 * 1000 });
 
   const units = settings.data?.units ?? 'lb';
   const d = a.data;
@@ -32,6 +36,34 @@ export function AnalyticsScreen() {
         </T>
       ) : (
         <>
+          <Card pad={18} style={{ marginBottom: 16, backgroundColor: t.accentSofter }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <CatSprite size={30} />
+              <T w={800} size={16}>
+                What does this mean?
+              </T>
+            </View>
+            {!explain ? (
+              <Pressable onPress={() => setExplain(true)}>
+                <T w={700} size={14} color={t.accentPress}>
+                  Have Marmalade read your numbers in plain English →
+                </T>
+              </Pressable>
+            ) : note.isLoading ? (
+              <T w={600} size={14} color={t.text2}>
+                Reading your numbers…
+              </T>
+            ) : note.data?.note ? (
+              <T w={600} size={14} color={t.text2} style={{ lineHeight: 21 }}>
+                {note.data.note}
+              </T>
+            ) : (
+              <T w={600} size={14} color={t.text3} style={{ lineHeight: 21 }}>
+                Not enough yet — keep logging and weighing in, and I’ll have more to say. 🐾
+              </T>
+            )}
+          </Card>
+
           {pts.length >= 2 ? (
             <Card pad={20} style={{ marginBottom: 16 }}>
               <SectionLabel style={{ marginBottom: 6 }}>Trend weight</SectionLabel>

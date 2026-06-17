@@ -11,6 +11,7 @@ import { restaurantHistory } from '../ai/personalContext';
 import { claudeStream, extractJson } from '../ai/client';
 import { complete } from '../ai/complete';
 import { generateDayInsights } from '../ai/dayInsights';
+import { explainAnalytics } from '../ai/explainAnalytics';
 import { type Anomaly, generateAnomalies } from '../ai/anomalies';
 import { marmaladeReply } from '../ai/chat';
 import type { ChatTurn } from '../ai/client';
@@ -151,6 +152,21 @@ export function aiRouter(db: DB): Router {
       res.json({ note });
     } catch {
       res.json({ note: cached?.date === date ? cached.note : null });
+    }
+  });
+
+  // ── plain-language read of her analytics, in Marmalade's voice (cached per day) ──
+  r.get('/analytics-note', async (req, res) => {
+    const date = isDayStr(req.query.date) ? req.query.date : todayStr();
+    const cached = readBlob<{ date: string; note: string }>(db, 'analytics_note');
+    if (cached && cached.date === date) return res.json({ note: cached.note });
+    if (!hasAnthropicKey()) return res.json({ note: null });
+    try {
+      const note = await explainAnalytics(db, date);
+      if (note) writeBlob(db, 'analytics_note', { date, note });
+      res.json({ note });
+    } catch (e) {
+      aiFail(res, 'analytics_note', e);
     }
   });
 
