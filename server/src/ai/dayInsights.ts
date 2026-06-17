@@ -4,6 +4,7 @@
 
 import { claudeText, FAST_MODEL } from './client';
 import { MARMALADE } from './persona';
+import { assembleContext } from './context';
 import type { DB } from '../db/index';
 import { getSettings } from '../settings';
 import { daySummary } from '../routes/foodLog';
@@ -52,6 +53,7 @@ export async function generateDayInsights(db: DB, date: string): Promise<string 
       'NEVER shaming: over goal is "a bit over, tomorrow is a fresh start", never an alarm. Plain ' +
       'sentences, no lists or headers.',
     content:
+      `${assembleContext(db, ['topFoods', 'mealHabits'], date)}\n\n` +
       `${weekday}. Goal: ${goal} kcal. Today total: ${total} kcal (${total <= goal ? `${goal - total} under goal` : `${total - goal} over goal`}). ` +
       `Yesterday: ${yesterday == null ? 'not logged' : `${yesterday} kcal`}. Protein today: ${protein} g (goal ${settings.protein_goal_g} g). ` +
       `Days at-or-under goal in a row (incl. today if under): ${underStreak}. Weekly bank: ${bank.bank_week >= 0 ? '+' : ''}${bank.bank_week} kcal. ` +

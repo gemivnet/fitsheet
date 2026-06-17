@@ -42,6 +42,10 @@ export function assembleContext(db: DB, flags: ContextFlag[] = [], date: string 
         lines.push(`Smoothed weight trend: ${w.current_trend} lb${rate}${band}.`);
       }
       if (a.goal.eta_date) lines.push(`On pace to reach goal around ${a.goal.eta_date} (${a.goal.eta_confidence ?? 'rough'} confidence).`);
+      if (a.tdee.estimate != null) {
+        const range = a.tdee.low != null && a.tdee.high != null ? ` (range ${a.tdee.low}–${a.tdee.high})` : '';
+        lines.push(`Estimated maintenance (TDEE): ~${a.tdee.estimate} kcal/day${range}. Her calorie goal is ${s.daily_calorie_goal} — the gap is roughly her intended daily deficit.`);
+      }
     }
     if (want.has('streaks')) {
       lines.push(`Logging streak: ${a.adherence.logging_streak} days. Under-goal streak: ${a.adherence.under_goal_streak} days. Days logged in total: ${a.adherence.days_logged}.`);

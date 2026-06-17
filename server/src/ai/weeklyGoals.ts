@@ -111,7 +111,7 @@ export async function suggestWeeklyGoals(db: DB, date: string = todayStr()): Pro
       name: 'weekly-goals',
       schema: WeeklyGoalSuggestionsSchema,
       model: 'fast',
-      globals: ['streaks', 'goals', 'recentDays'],
+      globals: ['streaks', 'goals', 'recentDays', 'topFoods', 'mealHabits'],
       system:
         'Suggest 3–4 small, encouraging weekly health goals for this person, grounded in her recent ' +
         'data and what would genuinely help next. Keep each short and warm. When a goal can be measured ' +

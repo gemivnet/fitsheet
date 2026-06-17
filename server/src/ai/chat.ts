@@ -29,7 +29,7 @@ function situation(db: DB, date: string): string {
   const todays = (db.prepare('SELECT meal_slot, name FROM food_log WHERE day_date = ? ORDER BY id').all(date) as { meal_slot: string; name: string }[])
     .map((r) => `${r.meal_slot}: ${r.name}`)
     .join('; ');
-  const ctx = assembleContext(db, ['goals', 'weightTrend', 'topFoods', 'mealHabits'], date);
+  const ctx = assembleContext(db, ['goals', 'weightTrend', 'topFoods', 'mealHabits', 'recentDays', 'streaks'], date);
   return (
     `TODAY (${date}): she's eaten ${eaten} kcal of her ${goal} goal — ` +
     `${diff >= 0 ? `${diff} kcal left` : `${Math.abs(diff)} kcal OVER`}.\n` +

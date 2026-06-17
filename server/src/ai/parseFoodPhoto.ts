@@ -11,12 +11,14 @@ import { CLARIFY_RULE, type ParsedFood } from './parseFood';
 
 const TASK = {
   name: 'parse-food-photo',
-  globals: ['topFoods'] as const,
+  globals: ['topFoods', 'mealHabits'] as const,
   schema: ParsedFoodResultSchema,
   system:
-    "You read a photo of someone's food notes or diary (handwritten or typed) and convert it into " +
-    'individual foods with realistic gram amounts and nutrition. Estimate typical portion sizes when ' +
-    'amounts are not written. When a food matches one she logs often, use that name and her usual ' +
+    'You read a food photo and convert it into individual foods with realistic gram amounts and ' +
+    'nutrition. The photo is EITHER a written list of foods (handwritten or typed notes/diary) OR a ' +
+    'picture of an actual plate/meal — handle both: read the list if it is one, otherwise identify the ' +
+    'foods you can see and estimate sensible portions from the plate. Estimate typical portion sizes ' +
+    'when amounts are not given. When a food matches one she logs often, use that name and her usual ' +
     'portion. Be reasonable, not exact. Ignore anything that is not food. ' +
     CLARIFY_RULE,
 };

@@ -4,6 +4,8 @@
 // associations like "McDonalds" → "Big Mac") and preserves spacing. Fails to '' on anything odd.
 
 import { claudeText, FAST_MODEL } from './client';
+import { personalFoodsHint } from './personalContext';
+import type { DB } from '../db/index';
 
 const SYS =
   'You autocomplete a single food or restaurant item name a user is typing. Reply with ONLY the one ' +
@@ -30,10 +32,13 @@ export function cleanSuffix(partial: string, raw: string): string {
   return suffix;
 }
 
-export async function complete(text: string, context: string): Promise<string> {
+export async function complete(db: DB, text: string, context: string): Promise<string> {
   const partial = text;
+  // bias toward foods/brands she actually logs, so "ch" → her "Chobani", not a generic guess
+  const mine = personalFoodsHint(db);
+  const hint = mine ? `\nFoods she logs often (prefer these when one matches): ${mine}.` : '';
   const run = (model?: string) =>
-    claudeText({ model, system: SYS, content: `Context: ${context || 'food item'}\nThey typed: ${JSON.stringify(partial)}\nThe full name is:`, maxTokens: 24, timeoutMs: 10_000 });
+    claudeText({ model, system: SYS, content: `Context: ${context || 'food item'}${hint}\nThey typed: ${JSON.stringify(partial)}\nThe full name is:`, maxTokens: 24, timeoutMs: 10_000 });
 
   let out = '';
   try {

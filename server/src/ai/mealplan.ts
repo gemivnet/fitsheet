@@ -61,7 +61,7 @@ export function buildMealPlanContent(db: DB, opts: PlanOpts): string {
   const keep = opts.keep ?? [];
   const recipes = db.prepare('SELECT name, approx_kcal, cook_band, tags_json FROM recipes ORDER BY is_favorite DESC, updated_at DESC LIMIT 40').all();
   const favorites = db.prepare('SELECT name, kcal_100g, serving_g FROM foods WHERE is_favorite = 1 LIMIT 40').all();
-  const ctx = assembleContext(db, ['goals', 'mealHabits', 'topFoods', 'recentDays'], opts.date ?? todayStr());
+  const ctx = assembleContext(db, ['goals', 'mealHabits', 'topFoods', 'recentDays', 'weightTrend', 'streaks'], opts.date ?? todayStr());
   const keptLines = keep.length
     ? '\nThe user is KEEPING these meals — reproduce them in their day untouched and plan everything else around them, never duplicating them:\n' +
       keep.map((k) => `Day ${k.dayIndex + 1} ${k.meal.slot}: ${k.meal.name} (${k.meal.kcal} kcal)`).join('\n')

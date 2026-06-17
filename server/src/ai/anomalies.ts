@@ -22,7 +22,7 @@ export type Anomaly = z.infer<typeof AnomalySchema>;
 
 const TASK = {
   name: 'anomalies',
-  globals: ['recentDays', 'weightTrend', 'streaks', 'goals'] as const,
+  globals: ['recentDays', 'weightTrend', 'streaks', 'goals', 'topFoods', 'mealHabits'] as const,
   model: 'fast' as const, // background check — keep it cheap
   maxTokens: 700,
   schema: AnomalyResultSchema,

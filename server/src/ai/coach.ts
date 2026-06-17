@@ -6,6 +6,7 @@ import type { DB } from '../db/index';
 import { getSettings } from '../settings';
 import { claudeText, FAST_MODEL } from './client';
 import { MARMALADE } from './persona';
+import { assembleContext } from './context';
 
 export async function generateCheckin(db: DB): Promise<string> {
   const s = getSettings(db);
@@ -48,7 +49,7 @@ export async function generateCheckin(db: DB): Promise<string> {
       'little note to her. Lead with the most genuinely notable thing this week — a milestone, a streak, ' +
       'movement, or steady logging. Be specific and warm. If she is over goal, be gentle and supportive. ' +
       'Address her by name. Plain text only — no markdown, no lists.',
-    content: `The user's data as JSON:\n${JSON.stringify(data)}\nWrite the check-in.`,
+    content: `${assembleContext(db, ['topFoods', 'mealHabits'])}\n\nThe user's data as JSON:\n${JSON.stringify(data)}\nWrite the check-in.`,
     maxTokens: 300,
   });
   return note.trim();

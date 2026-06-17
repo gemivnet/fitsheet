@@ -79,7 +79,7 @@ export function aiRouter(db: DB): Router {
     const context = String(req.body?.context ?? '');
     if (!hasAnthropicKey() || text.trim().length < 2) return res.json({ completion: '' });
     try {
-      res.json({ completion: await complete(text, context) });
+      res.json({ completion: await complete(db, text, context) });
     } catch {
       res.json({ completion: '' });
     }
