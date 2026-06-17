@@ -121,7 +121,7 @@ export function aiRouter(db: DB): Router {
       .slice(-20) // keep the conversation bounded
       .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 2000) }));
     try {
-      res.json({ reply: await marmaladeReply(db, history, date) });
+      res.json(await marmaladeReply(db, history, date)); // { reply, action }
     } catch (e) {
       aiFail(res, 'chat', e);
     }

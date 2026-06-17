@@ -35,6 +35,24 @@ export const ParsedRecipeSchema = z.object({
   steps: z.string().nullable().catch(null),
 });
 
+// ── Marmalade chat with optional action ──────────────────────────────────────
+// One loose object (not a strict discriminated union, which is fragile to parse): `kind` picks the
+// action and the relevant fields come along. The client confirms anything that writes.
+export const ChatActionSchema = z
+  .object({
+    kind: z.enum(['log_food', 'generate_plan', 'suggest_meal', 'navigate', 'none']).catch('none'),
+    items: z
+      .array(z.object({ name: z.string().min(1), grams: numOr(0), kcal: num, protein_g: numOr(0), carb_g: numOr(0), fat_g: numOr(0) }))
+      .catch([]),
+    slot: z.string().nullable().catch(null),
+    days: z.coerce.number().nullable().catch(null),
+    guidance: z.string().nullable().catch(null),
+    screen: z.enum(['day', 'weight', 'analytics', 'mealplan', 'goals']).nullable().catch(null),
+  })
+  .nullable()
+  .catch(null);
+export const ChatReplySchema = z.object({ reply: z.string().min(1), action: ChatActionSchema });
+
 // ── "what should I eat?" suggestions ─────────────────────────────────────────
 export const MealSuggestionSchema = z.object({
   name: z.string().min(1),

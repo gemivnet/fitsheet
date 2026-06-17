@@ -216,6 +216,15 @@ export interface ChatTurn {
   role: 'user' | 'assistant';
   content: string;
 }
+// An optional thing Marmalade offers to DO from the chat. Writes are confirmed client-side.
+export interface ChatAction {
+  kind: 'log_food' | 'generate_plan' | 'suggest_meal' | 'navigate' | 'none';
+  items?: { name: string; grams: number; kcal: number; protein_g: number; carb_g: number; fat_g: number }[];
+  slot?: string | null;
+  days?: number | null;
+  guidance?: string | null;
+  screen?: 'day' | 'weight' | 'analytics' | 'mealplan' | 'goals' | null;
+}
 
 export interface Anomaly {
   severity: 'fyi' | 'heads_up';
@@ -531,7 +540,7 @@ export const api = {
     analyticsNote: (date: string) => req<{ note: string | null }>('GET', `/api/ai/analytics-note?date=${date}`),
     suggestMeal: (slot: string, date: string) => req<{ suggestions: MealSuggestion[] }>('GET', `/api/ai/suggest-meal?slot=${slot}&date=${date}`),
     anomalies: (date: string) => req<{ anomalies: Anomaly[] }>('GET', `/api/ai/anomalies?date=${date}`),
-    chat: (messages: ChatTurn[], date: string) => req<{ reply: string }>('POST', '/api/ai/chat', { messages, date }),
+    chat: (messages: ChatTurn[], date: string) => req<{ reply: string; action: ChatAction | null }>('POST', '/api/ai/chat', { messages, date }),
     refreshCheckin: () => req<{ note: string | null }>('POST', '/api/ai/checkin/refresh'),
     mealPlan: {
       get: () => req<{ plan: MealPlan | null }>('GET', '/api/ai/meal-plan'),

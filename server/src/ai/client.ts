@@ -3,6 +3,8 @@
 // fast structured tasks. Gated by ANTHROPIC_API_KEY upstream (routes return 503 if absent).
 
 import Anthropic from '@anthropic-ai/sdk';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import type { z } from 'zod';
 import { config } from '../config';
 
 type Content = Anthropic.MessageParam['content'];
@@ -36,6 +38,31 @@ export async function claudeChat(opts: { system: string; messages: ChatTurn[]; m
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)
     .join('');
+}
+
+/** Multi-turn chat that returns a schema-validated object (reply + optional action). Null on
+ *  refusal/truncation/parse failure, so the caller can fall back to a plain text reply. */
+export async function claudeChatStructured<S extends z.ZodType>(opts: {
+  system: string;
+  messages: ChatTurn[];
+  schema: S;
+  maxTokens?: number;
+  model?: string;
+}): Promise<z.infer<S> | null> {
+  try {
+    const res = await client().messages.parse({
+      model: opts.model ?? config.anthropicModel,
+      max_tokens: opts.maxTokens ?? 600,
+      system: opts.system,
+      messages: opts.messages.map((m) => ({ role: m.role, content: m.content })),
+      output_config: { format: zodOutputFormat(opts.schema) },
+    });
+    if (res.stop_reason === 'refusal' || res.stop_reason === 'max_tokens') return null;
+    return (res.parsed_output as z.infer<S>) ?? null;
+  } catch (e) {
+    console.warn('[ai] structured chat failed:', e);
+    return null;
+  }
 }
 
 export async function claudeText(opts: { system?: string; content: Content; maxTokens?: number; model?: string; timeoutMs?: number }): Promise<string> {
