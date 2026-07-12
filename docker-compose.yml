@@ -6,7 +6,7 @@ services:
     container_name: fitsheet
     restart: unless-stopped
     environment:
-      TZ: America/Chicago
+      TZ: ${TZ:-UTC} # defaults to UTC; set TZ in a .env or your env for local time (e.g. TZ=America/Chicago)
       DATA_DIR: /app/data
       PORT: "3000"
       # Optional: enables AI nutrition-label reading. Put it in a .env next to this file

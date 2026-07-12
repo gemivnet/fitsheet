@@ -39,7 +39,7 @@ services:
     container_name: fitsheet
     restart: unless-stopped
     environment:
-      TZ: America/Chicago
+      TZ: ${TZ:-UTC} # defaults to UTC — set TZ in your stack/env for local time (e.g. TZ=America/Chicago)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-} # optional: enables AI label reading
     ports: ['3000:3000']
     volumes: ['fitsheet-data:/app/data'] # DB + photos — back this up

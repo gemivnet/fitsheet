@@ -27,3 +27,9 @@ design-handoff/
 *.log
 .DS_Store
 *.orig
+*.swp
+*.swo
+*~
+
+# claude code local settings (per-machine, not shared)
+.claude/settings.local.json

@@ -10,7 +10,7 @@ RUN npm install
 
 COPY . .
 
-ENV TZ=America/Chicago
+ENV TZ=UTC
 ENV DATA_DIR=/app/data
 ENV PORT=3000
 RUN mkdir -p /app/data/uploads

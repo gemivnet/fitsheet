@@ -17,7 +17,7 @@ RUN npm install
 COPY server/ ./
 COPY --from=web /web/dist ./web
 
-ENV TZ=America/Chicago
+ENV TZ=UTC
 ENV DATA_DIR=/app/data
 ENV PORT=3000
 ENV WEB_DIR=/app/web

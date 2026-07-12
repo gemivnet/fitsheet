@@ -14,7 +14,7 @@ services:
     container_name: fitsheet
     restart: unless-stopped
     environment:
-      TZ: America/Chicago
+      TZ: ${TZ:-UTC} # defaults to UTC; set TZ in Portainer's stack env for local time (e.g. TZ=America/Chicago)
       # Optional: enables AI nutrition-label reading. Leave blank to disable (label capture then
       # falls back to manual entry). Set it in Portainer's stack environment variables.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
