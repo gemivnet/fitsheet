@@ -27,6 +27,8 @@ export interface Settings {
   height_cm: number | null;
   activity_factor: number;
   goal_rate_lb: number; // target loss per week, in lb
+  // period tracking (opt-in; the Cycle screen + Home prompts only appear when on)
+  cycle_tracking: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -50,6 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
   height_cm: null,
   activity_factor: 1.375,
   goal_rate_lb: 1.0,
+  cycle_tracking: false,
 };
 
 export function getSettings(db: DB): Settings {

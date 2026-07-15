@@ -6,8 +6,9 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { applyNumberKey, BankLine, Button, CalorieRing, Card, CelebrationModal, Checkbox, Icon, MacroBar, NumberPad, ProgressBar, Screen, SectionLabel, Sheet, showToast, SuggestMealSheet, T } from '../components';
-import { api, type Suggestion, type SupplementToday, type UsualMeal } from '../lib/api';
-import { DAY_UNDER_GOAL, FIRST_LOG_OF_DAY, pick, WORKOUT_DONE } from '../lib/encouragement';
+import { api, type DashboardCycle, type Suggestion, type SupplementToday, type UsualMeal } from '../lib/api';
+import { CYCLE_END_LOGGED, CYCLE_SKIPPED, CYCLE_START_LOGGED, DAY_UNDER_GOAL, FIRST_LOG_OF_DAY, pick, WORKOUT_DONE } from '../lib/encouragement';
+import { markNudgeSeen, nudgeSeenToday } from '../lib/nudges';
 import { addDaysStr, slotForNow, todayStr } from '../lib/date';
 import { fmtWeight } from '../lib/units';
 import { openUrl } from '../lib/url';
@@ -137,6 +138,8 @@ export function HomeScreen() {
             ) : null}
           </>
         )}
+
+        {d.cycle ? <CyclePromptCard cycle={d.cycle} /> : null}
 
         {/* today's calories */}
         <Card pad={24} style={{ marginBottom: 16 }}>
@@ -475,6 +478,65 @@ function QuickLogSuggestions({ slot, onAdd, firstOfDay }: { slot: string; onAdd:
           </View>
         );
       })}
+    </Card>
+  );
+}
+
+// "Did your period start/finish today?" — asked from the predicted day until she answers yes.
+// "Not today" only hides it until tomorrow; when it's running late she can also pencil in an
+// estimated period for a month that slipped by untracked.
+function CyclePromptCard({ cycle }: { cycle: DashboardCycle }) {
+  const t = useTheme();
+  const qc = useQueryClient();
+  const [dismissed, setDismissed] = useState(false);
+  const kind = cycle.prompt === 'start' ? 'cycle-start' : 'cycle-end';
+
+  const done = (toast: string) => {
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
+    qc.invalidateQueries({ queryKey: ['cycle'] });
+    qc.invalidateQueries({ queryKey: ['cycle-summary'] });
+    showToast(toast);
+  };
+  const start = useMutation({ mutationFn: () => api.cycle.add({ start_date: todayStr() }), onSuccess: () => done(pick(CYCLE_START_LOGGED)) });
+  const end = useMutation({ mutationFn: () => api.cycle.update(cycle.open_entry!.id, { end_date: todayStr() }), onSuccess: () => done(pick(CYCLE_END_LOGGED)) });
+  const skip = useMutation({ mutationFn: () => api.cycle.skip(), onSuccess: () => done(pick(CYCLE_SKIPPED)) });
+
+  if (!cycle.prompt || dismissed || nudgeSeenToday(kind)) return null;
+  const isStart = cycle.prompt === 'start';
+
+  return (
+    <Card pad={18} style={{ marginBottom: 16, backgroundColor: t.accentSofter }}>
+      <SectionLabel style={{ marginBottom: 6 }}>{isStart ? 'Did your period start today?' : 'Did your period finish today?'}</SectionLabel>
+      <T w={700} size={14} color={t.text2} style={{ marginBottom: 14, lineHeight: 20 }}>
+        {isStart
+          ? cycle.is_late
+            ? 'It was expected a little while ago — bodies keep their own calendars 🐾'
+            : 'Around now is when it usually arrives — just checking in.'
+          : 'If it’s wrapped up, I’ll note the end date for you.'}
+      </T>
+      <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+        <View style={{ flex: 1, minWidth: 120 }}>
+          <Button full icon="check" onPress={() => (isStart ? start.mutate() : end.mutate())}>
+            Yes, today
+          </Button>
+        </View>
+        <Button
+          variant="soft"
+          onPress={() => {
+            markNudgeSeen(kind);
+            setDismissed(true);
+          }}
+        >
+          Not yet
+        </Button>
+      </View>
+      {isStart && cycle.is_late ? (
+        <View style={{ marginTop: 10 }}>
+          <Button variant="ghost" size="sm" onPress={() => skip.mutate()}>
+            I missed logging that one — pencil it in
+          </Button>
+        </View>
+      ) : null}
     </Card>
   );
 }

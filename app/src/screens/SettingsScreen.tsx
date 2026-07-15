@@ -71,6 +71,7 @@ export function SettingsScreen() {
   const [hour, setHour] = useState('9');
   const [workoutReminders, setWorkoutReminders] = useState(true);
   const [banking, setBanking] = useState(true);
+  const [cycleTracking, setCycleTracking] = useState(false);
   const [nudges, setNudges] = useState(nudgesEnabled); // local-only (localStorage), saves on toggle
   const [calcOpen, setCalcOpen] = useState(false);
 
@@ -86,6 +87,7 @@ export function SettingsScreen() {
     setHour(String(s.weigh_in_hour));
     setWorkoutReminders(s.workout_reminders);
     setBanking(s.weekly_banking);
+    setCycleTracking(s.cycle_tracking);
   }, [settings.data]);
 
   async function save() {
@@ -99,6 +101,7 @@ export function SettingsScreen() {
       weigh_in_hour: Number(hour) || 9,
       workout_reminders: workoutReminders,
       weekly_banking: banking,
+      cycle_tracking: cycleTracking,
     };
     await api.settings.update(patch);
     qc.invalidateQueries();
@@ -178,6 +181,17 @@ export function SettingsScreen() {
             Day-before workout reminders
           </T>
           <Switch value={workoutReminders} onValueChange={setWorkoutReminders} trackColor={{ true: t.accent }} />
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <T w={700} size={15} color={t.text2}>
+              Period tracking
+            </T>
+            <T w={600} size={12} color={t.text3} style={{ lineHeight: 17 }}>
+              Adds a Cycle page under More and a gentle Home check-in around when your period is expected.
+            </T>
+          </View>
+          <Switch value={cycleTracking} onValueChange={setCycleTracking} trackColor={{ true: t.accent }} />
         </View>
       </Card>
 

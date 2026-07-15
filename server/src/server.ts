@@ -7,6 +7,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import type { DB } from './db/index';
 import { aiRouter } from './routes/ai';
 import { analyticsRouter } from './routes/analytics';
+import { cycleRouter } from './routes/cycle';
 import { dashboardRouter } from './routes/dashboard';
 import { devRouter } from './routes/dev';
 import { foodLogRouter } from './routes/foodLog';
@@ -40,6 +41,7 @@ export function buildServer(db: DB) {
   app.use('/api/walks', walksRouter(db));
   app.use('/api/notes', notesRouter(db));
   app.use('/api/supplements', supplementsRouter(db));
+  app.use('/api/cycle', cycleRouter(db));
   app.use('/api/recipes', recipesRouter(db));
   app.use('/api/restaurants', restaurantsRouter(db));
   app.use('/api/analytics', analyticsRouter(db));

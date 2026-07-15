@@ -55,6 +55,7 @@ export interface Settings {
   height_cm: number | null;
   activity_factor: number;
   goal_rate_lb: number;
+  cycle_tracking: boolean;
 }
 
 export interface Food {
@@ -271,6 +272,40 @@ export interface Dashboard {
   weight: { current_trend: number | null; lbs_per_week: number | null; label: string; goal: WeightGoal };
   workout: Workout | null;
   milestone: Milestone | null;
+  cycle: DashboardCycle | null;
+}
+
+export interface DashboardCycle {
+  prompt: 'start' | 'end' | null;
+  predicted_start: string | null;
+  concern_date: string | null;
+  is_late: boolean;
+  open_entry: { id: number; start_date: string } | null;
+  avg_duration_days: number | null;
+}
+
+export interface CycleEntry {
+  id: number;
+  start_date: string;
+  end_date: string | null;
+  estimated: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CycleSummary {
+  n_cycles: number;
+  avg_cycle_days: number | null;
+  cycle_std_days: number | null;
+  avg_duration_days: number | null;
+  last_start: string | null;
+  open_entry: { id: number; start_date: string } | null;
+  predicted_start: string | null;
+  concern_date: string | null;
+  is_late: boolean;
+  confidence: 'low' | 'medium' | 'high' | null;
+  reason: string | null;
 }
 
 export interface Analytics {
@@ -518,6 +553,15 @@ export const api = {
     update: (id: number, p: { name?: string; active?: boolean }) => req<Supplement>('PATCH', `/api/supplements/${id}`, p),
     remove: (id: number) => req('DELETE', `/api/supplements/${id}`),
     toggle: (id: number, date: string, taken: boolean) => req('POST', `/api/supplements/${id}/toggle`, { date, taken }),
+  },
+
+  cycle: {
+    list: () => req<CycleEntry[]>('GET', '/api/cycle'),
+    summary: () => req<CycleSummary>('GET', `/api/cycle/summary?date=${todayStr()}`),
+    add: (p: { start_date: string; end_date?: string | null; notes?: string | null }) => req<CycleEntry>('POST', '/api/cycle', p),
+    update: (id: number, p: { start_date?: string; end_date?: string | null; notes?: string | null }) => req<CycleEntry>('PATCH', `/api/cycle/${id}`, p),
+    remove: (id: number) => req('DELETE', `/api/cycle/${id}`),
+    skip: () => req<CycleEntry>('POST', '/api/cycle/skip', { date: todayStr() }),
   },
 
   restaurants: {

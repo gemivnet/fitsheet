@@ -15,6 +15,11 @@ export const DAY_OVER_GOAL_GENTLE = ['A bit over today — one day never undoes 
 
 export const WEIGH_IN_DONE = ['Logged. The trend line does the worrying, not you 🐾', 'Noted. One dot at a time.', 'Got it — that’s all I needed ✨'];
 
+// period tracking — always gentle, never clinical, never an alarm
+export const CYCLE_START_LOGGED = ['Noted — be kind to yourself today 🐾', 'Logged. Blanket and tea sound about right.', 'Got it. I’ll keep quiet watch ✨'];
+export const CYCLE_END_LOGGED = ['Wrapped up and noted 🐾', 'Logged — onwards ✨', 'Noted. Predictions just got a little smarter.'];
+export const CYCLE_SKIPPED = ['Penciled in — no harm done 🐾', 'Estimated and moving on ✨', 'Noted as a best guess — you can tidy it later.'];
+
 // Marmalade's idle voice — shown when you tap her and she has no real news. Warm, a little catty.
 export const MARMALADE_IDLE = [
   'Mrrp. Just keeping you company. 🐾',
