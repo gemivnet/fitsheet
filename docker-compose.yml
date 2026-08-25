@@ -14,7 +14,10 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
     ports:
-      - "3000:3000"
+      # Loopback only. There is no auth middleware on this API and it serves weight,
+      # calorie, medication and cycle data -- publishing on 0.0.0.0 exposed all of it
+      # to anything on the LAN or guest wifi. Reach it through the reverse proxy.
+      - "127.0.0.1:3000:3000"
     volumes:
       # DB + uploaded photos. This single folder is the whole backup.
       - ./server/data:/app/data
