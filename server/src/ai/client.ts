@@ -6,6 +6,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import type { z } from 'zod';
 import { config } from '../config';
+import { assertWithinBudget, recordUsage } from './budget';
 
 type Content = Anthropic.MessageParam['content'];
 
@@ -28,12 +29,15 @@ export interface ChatTurn {
 
 /** Multi-turn chat (Marmalade). Returns the assistant's reply text. */
 export async function claudeChat(opts: { system: string; messages: ChatTurn[]; maxTokens?: number; model?: string }): Promise<string> {
+  assertWithinBudget();
+  const model = opts.model ?? config.anthropicModel;
   const res = await client().messages.create({
-    model: opts.model ?? config.anthropicModel,
+    model,
     max_tokens: opts.maxTokens ?? 400,
     system: opts.system,
     messages: opts.messages.map((m) => ({ role: m.role, content: m.content })),
   });
+  recordUsage('chat', res.usage, model);
   return res.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)
@@ -50,13 +54,16 @@ export async function claudeChatStructured<S extends z.ZodType>(opts: {
   model?: string;
 }): Promise<z.infer<S> | null> {
   try {
+    assertWithinBudget();
+    const model = opts.model ?? config.anthropicModel;
     const res = await client().messages.parse({
-      model: opts.model ?? config.anthropicModel,
+      model,
       max_tokens: opts.maxTokens ?? 600,
       system: opts.system,
       messages: opts.messages.map((m) => ({ role: m.role, content: m.content })),
       output_config: { format: zodOutputFormat(opts.schema) },
     });
+    recordUsage('chat_structured', res.usage, model);
     if (res.stop_reason === 'refusal' || res.stop_reason === 'max_tokens') return null;
     return (res.parsed_output as z.infer<S>) ?? null;
   } catch (e) {
@@ -66,15 +73,18 @@ export async function claudeChatStructured<S extends z.ZodType>(opts: {
 }
 
 export async function claudeText(opts: { system?: string; content: Content; maxTokens?: number; model?: string; timeoutMs?: number }): Promise<string> {
+  assertWithinBudget();
+  const model = opts.model ?? config.anthropicModel;
   const res = await client().messages.create(
     {
-      model: opts.model ?? config.anthropicModel,
+      model,
       max_tokens: opts.maxTokens ?? 1024,
       system: opts.system,
       messages: [{ role: 'user', content: opts.content }],
     },
     opts.timeoutMs ? { timeout: opts.timeoutMs } : undefined,
   );
+  recordUsage('text', res.usage, model);
   return res.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)
@@ -83,9 +93,11 @@ export async function claudeText(opts: { system?: string; content: Content; maxT
 
 /** Like claudeText, but streams text deltas to onText as they arrive; resolves with the full text. */
 export async function claudeStream(opts: { system?: string; content: Content; maxTokens?: number; model?: string; timeoutMs?: number; onText: (delta: string) => void }): Promise<string> {
+  assertWithinBudget();
+  const model = opts.model ?? config.anthropicModel;
   const stream = client().messages.stream(
     {
-      model: opts.model ?? config.anthropicModel,
+      model,
       max_tokens: opts.maxTokens ?? 1024,
       system: opts.system,
       messages: [{ role: 'user', content: opts.content }],
@@ -94,6 +106,7 @@ export async function claudeStream(opts: { system?: string; content: Content; ma
   );
   stream.on('text', (delta: string) => opts.onText(delta));
   const final = await stream.finalMessage();
+  recordUsage('stream', final.usage, model);
   return final.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)
@@ -120,9 +133,11 @@ export async function claudeResearch(opts: {
     { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: opts.maxFetches ?? 3, citations: { enabled: true }, max_content_tokens: 60_000 },
   ] as unknown as Anthropic.Messages.ToolUnion[];
 
+  assertWithinBudget();
+  const model = opts.model ?? config.anthropicModel;
   const res = await client().messages.create(
     {
-      model: opts.model ?? config.anthropicModel,
+      model,
       max_tokens: opts.maxTokens ?? 4000,
       system: opts.system,
       messages: [{ role: 'user', content: opts.content }],
@@ -131,6 +146,9 @@ export async function claudeResearch(opts: {
     opts.timeoutMs ? { timeout: opts.timeoutMs } : undefined,
   );
 
+  // web_search is billed per search on top of tokens; recordUsage reads
+  // usage.server_tool_use.web_search_requests so those count too.
+  recordUsage('research', res.usage, model);
   const text = res.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)

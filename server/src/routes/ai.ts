@@ -3,6 +3,7 @@ import { generateCheckin } from '../ai/coach';
 import { assembleStored, buildMealPlanContent, generateMealPlan, MEALPLAN_SYSTEM, type KeptMeal, type StoredPlan } from '../ai/mealplan';
 import { MealPlanSchema } from '../ai/schemas';
 import { getWeeklyGoals, saveWeeklyGoals, suggestWeeklyGoals } from '../ai/weeklyGoals';
+import { budgetSummary } from '../ai/budget';
 import { extractLabel } from '../ai/extractLabel';
 import { parseFood } from '../ai/parseFood';
 import { parseFoodPhoto } from '../ai/parseFoodPhoto';
@@ -63,6 +64,10 @@ function cacheCheckin(db: DB, note: string): void {
 
 export function aiRouter(db: DB): Router {
   const r = Router();
+
+  // ── what has the AI cost this month ─────────────────────────────────────
+  // The answer to "what am I spending on this", and what Settings reads to show it.
+  r.get('/budget', (_req, res) => res.json(budgetSummary(db)));
 
   // ── nutrition label → custom food (photo always saved) ──────────────────
   r.post('/extract-label', upload.single('file'), async (req, res) => {

@@ -6,11 +6,15 @@ import { openDb } from './db/index';
 import { migrate } from './db/migrate';
 import { normalizeRestaurants } from './normalize';
 import { seedDefaults } from './seed';
+import { registerUsageDb } from './ai/budget';
 import { buildServer } from './server';
 
 const db = openDb();
 migrate(db);
 seedDefaults(db);
+// Before any route is mounted: until the ledger has a DB handle, AI calls are neither
+// counted nor capped.
+registerUsageDb(db);
 normalizeRestaurants(db);
 
 // Keep the audit trail from growing without bound (it's a debugging aid, not a ledger).

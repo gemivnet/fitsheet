@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import { BudgetExceededError } from './ai/budget';
 import type { DB } from './db/index';
 import { aiRouter } from './routes/ai';
 import { analyticsRouter } from './routes/analytics';
@@ -67,6 +68,17 @@ export function buildServer(db: DB) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     console.error('[error]', err);
+    // Hitting the monthly AI spend cap is an expected, actionable state, not a crash:
+    // 429 so the client can say "AI is paused for this month" rather than "something
+    // went wrong".
+    if (err instanceof BudgetExceededError) {
+      return res.status(429).json({
+        error: 'ai_budget_reached',
+        message: err.message,
+        spent_usd: err.spentMicros / 1_000_000,
+        cap_usd: err.capMicros / 1_000_000,
+      });
+    }
     // Bad uploads (wrong type / too big) are a client problem, not a server crash.
     const msg = err instanceof Error ? err.message : '';
     if (msg.includes('only image uploads') || msg.includes('File too large')) return res.status(400).json({ error: 'bad_upload' });
