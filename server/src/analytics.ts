@@ -12,7 +12,6 @@ const TREND_TAU_DAYS = 30; // how fast old weigh-ins fade out of the trend
 
 // ── date helpers (YYYY-MM-DD) ───────────────────────────────────────────────
 const parse = (s: string): Date => new Date(`${s}T00:00:00`);
-const diffDays = (a: string, b: string): number => Math.round((parse(a).getTime() - parse(b).getTime()) / 86_400_000);
 function addDays(s: string, n: number): string {
   const d = parse(s);
   d.setDate(d.getDate() + n);

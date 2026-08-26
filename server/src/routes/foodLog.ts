@@ -7,6 +7,22 @@ import { addDaysStr, clamp, cleanDiningName, finiteNum, hourOfDay, isDayStr, now
 
 const SLOTS = ['breakfast', 'lunch', 'dinner', 'snacks'] as const;
 
+/**
+ * Next position within a meal, so items stay in the order they were logged.
+ *
+ * This used to be `Date.now() % 100000`, which wraps every 100 seconds: two items added
+ * either side of a wrap sorted backwards, and the more carefully someone logged a meal
+ * item by item the more likely they were to hit it.
+ */
+function nextSortOrder(db: DB, date: string, slot: string): number {
+  const row = db
+    .prepare(
+      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM food_log WHERE day_date = ? AND meal_slot = ?',
+    )
+    .get(date, slot) as { next: number };
+  return row.next;
+}
+
 interface LogRow {
   id: number;
   day_date: string;
@@ -255,7 +271,7 @@ export function foodLogRouter(db: DB): Router {
         'INSERT INTO food_log (day_date,meal_slot,food_id,name,grams,kcal,protein,carb,fat,sort_order,eating_out,created_at,hour_local) ' +
           'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
       )
-      .run(date, slot, foodId, logName, grams, kcal, protein, carb, fat, Date.now() % 100000, eatingOut, ts, hourOfDay(b.hour));
+      .run(date, slot, foodId, logName, grams, kcal, protein, carb, fat, nextSortOrder(db, date, slot), eatingOut, ts, hourOfDay(b.hour));
     // Remember how this food was entered (grams vs servings) and the amount, so re-adding
     // it pre-fills the same way. Bumping updated_at also floats it up the "My foods" list.
     if (foodId != null) {
