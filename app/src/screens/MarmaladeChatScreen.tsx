@@ -31,7 +31,7 @@ export function MarmaladeChatScreen() {
   const [action, setAction] = useState<ChatAction | null>(null);
   const [suggest, setSuggest] = useState<string | null>(null); // slot when the suggest sheet is open
   const [busy, setBusy] = useState(false);
-  const scroller = useRef<ScrollView>(null);
+  const scroller = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
   const chat = useMutation({
     mutationFn: (history: ChatTurn[]) => api.ai.chat(history, todayStr()),

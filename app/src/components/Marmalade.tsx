@@ -14,6 +14,7 @@ import Svg, { Rect } from 'react-native-svg';
 import { Icon } from './Icon';
 import { T } from './primitives';
 import { api } from '../lib/api';
+import { transition } from '../lib/moti';
 import { DAY_OVER_GOAL_GENTLE, MARMALADE_IDLE, pick } from '../lib/encouragement';
 import { loadDismissed, markNudgeSeen, nudgeSeenToday, nudgesEnabled, saveDismissed } from '../lib/nudges';
 import { slotForNow, todayStr } from '../lib/date';
@@ -348,7 +349,7 @@ export function Companion() {
       <MotiView
         from={{ opacity: 0, scale: 0.6 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={{ type: 'spring', damping: 12, stiffness: 180 }}
+        transition={transition({ type: 'spring', damping: 12, stiffness: 180 })}
         style={{ marginLeft: 4 }}
       >
         <View style={{ width: 64 }}>
@@ -357,7 +358,7 @@ export function Companion() {
             <MotiView
               from={{ opacity: 0.35 }}
               animate={{ opacity: 1 }}
-              transition={{ type: 'timing', duration: 1800, loop: true, repeatReverse: true, easing: Easing.inOut(Easing.quad) }}
+              transition={transition({ type: 'timing', duration: 1800, loop: true, repeatReverse: true, easing: Easing.inOut(Easing.quad) })}
               style={{ position: 'absolute', top: -8, right: 0 }}
             >
               <T w={800} size={13} color={t.text3}>
@@ -370,7 +371,7 @@ export function Companion() {
             <MotiView
               from={{ translateY: 0 }}
               animate={{ translateY: -18 }}
-              transition={{ type: 'timing', duration: 320, loop: true, repeatReverse: true, easing: Easing.inOut(Easing.quad) }}
+              transition={transition({ type: 'timing', duration: 320, loop: true, repeatReverse: true, easing: Easing.inOut(Easing.quad) })}
               style={{ position: 'absolute', right: -8, bottom: 8 }}
             >
               <View style={{ width: 12, height: 12, borderRadius: 999, backgroundColor: t.accent, borderWidth: 1.5, borderColor: t.accentPress }} />
@@ -379,12 +380,12 @@ export function Companion() {
           <GestureDetector gesture={gesture}>
             <MotiView
               animate={{ translateY: hasNews ? -5 : 0, scale: activity === 'sleep' ? 1.04 : 1 }}
-              transition={{
+              transition={transition({
                 translateY: hasNews
                   ? { type: 'timing', duration: 850, loop: true, repeatReverse: true, easing: Easing.inOut(Easing.quad) }
                   : { type: 'spring', damping: 14 },
                 scale: activity === 'sleep' ? { type: 'timing', duration: 1800, loop: true, repeatReverse: true, easing: Easing.inOut(Easing.quad) } : { type: 'spring', damping: 14 },
-              }}
+              })}
               accessibilityLabel="Marmalade the cat"
             >
               <CatSprite size={58} />
