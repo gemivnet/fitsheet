@@ -6,6 +6,7 @@ import { AnimatePresence, MotiView } from 'moti';
 import { Icon } from './Icon';
 import { T } from './primitives';
 import { useTheme } from '../theme';
+import { transition } from '../lib/moti';
 
 export interface ToastOptions {
   kind?: 'success' | 'error';
@@ -50,7 +51,7 @@ export function ToastHost() {
             from={{ opacity: 0, scale: 0.85, translateY: 12 }}
             animate={{ opacity: 1, scale: 1, translateY: 0 }}
             exit={{ opacity: 0, scale: 0.9, translateY: 8 }}
-            transition={{ type: 'spring', damping: 16, stiffness: 220, mass: 0.7 }}
+            transition={transition({ type: 'spring', damping: 16, stiffness: 220, mass: 0.7 })}
             style={{
               flexDirection: 'row',
               alignItems: 'center',

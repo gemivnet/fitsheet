@@ -5,6 +5,7 @@ import React from 'react';
 import { Easing, Modal, View, type DimensionValue } from 'react-native';
 import { MotiView } from 'moti';
 import { useTheme } from '../theme';
+import { transition } from '../lib/moti';
 import { Button, Card, T } from './primitives';
 
 const CONFETTI_COLORS = ['#F8836B', '#FFD9C7', '#6BBF8A', '#E8B04B', '#7CA6C9', '#C07A9E'];
@@ -18,7 +19,7 @@ function Piece({ i, height }: { i: number; height: number }) {
     <MotiView
       from={{ translateY: -16, rotate: `${i * 47}deg`, opacity: 1 }}
       animate={{ translateY: height, rotate: `${i * 47 + 540}deg`, opacity: 0.9 }}
-      transition={{ type: 'timing', duration: dur, delay, loop: true, repeatReverse: false, easing: Easing.bezier(0.4, 0.6, 0.6, 1) }}
+      transition={transition({ type: 'timing', duration: dur, delay, loop: true, repeatReverse: false, easing: Easing.bezier(0.4, 0.6, 0.6, 1) })}
       style={{
         position: 'absolute',
         top: 0,

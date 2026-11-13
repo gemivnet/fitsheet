@@ -30,9 +30,7 @@ export default function CalorieRingSkia({ consumed, goal, size = 230, stroke = 2
 
   // a full circle starting at 12 o'clock; the trim end (0..1) is animated to show progress
   const path = React.useMemo(() => {
-    const p = Skia.Path.Make();
-    p.addCircle(cx, cx, r);
-    return p;
+    return Skia.PathBuilder.Make().addCircle(cx, cx, r).build();
   }, [cx, r]);
 
   const progress = useSharedValue(0);
