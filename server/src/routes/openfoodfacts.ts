@@ -11,7 +11,7 @@ export function offRouter(): Router {
   });
 
   r.get('/search', async (req, res) => {
-    const q = ((req.query.q as string) || '').trim();
+    const q = (typeof req.query.q === 'string' ? req.query.q : '').trim();
     if (!q) return res.json([]);
     res.json(await offSearch(q));
   });

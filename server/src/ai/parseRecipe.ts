@@ -1,6 +1,7 @@
 // parseRecipe.ts — a recipe from pasted text, a web link, or a PDF → structured fields.
 
-import { readFileSync } from 'node:fs';
+import { readUpload } from '../uploadPath';
+import { safeFetchText } from '../safeFetch';
 import type { DB } from '../db/index';
 import { documentBlock } from './client';
 import { runTask } from './task';
@@ -32,21 +33,13 @@ export async function parseRecipe(db: DB, text: string): Promise<ParsedRecipe | 
 // Fetch a recipe page and parse it. http(s) only; bounded time + size; HTML stripped to text.
 export async function parseRecipeFromUrl(db: DB, url: string): Promise<ParsedRecipe | null> {
   if (!/^https?:\/\//i.test(url)) return null;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 12_000);
   let html = '';
   try {
-    const r = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'fitsheet/1.0 (recipe import)' } });
-    if (!r.ok) {
-      console.warn(`[ai] recipe url fetch failed: ${r.status}`);
-      return null;
-    }
-    html = (await r.text()).slice(0, 200_000);
+    // refuses private/loopback/link-local addresses, including after redirects
+    html = await safeFetchText(url);
   } catch (e) {
-    console.warn('[ai] recipe url fetch error:', e);
+    console.warn('[ai] recipe url fetch error:', e instanceof Error ? e.message : e);
     return null;
-  } finally {
-    clearTimeout(timer);
   }
   const text = htmlToText(html).slice(0, 8000);
   if (!text.trim()) return null;
@@ -54,15 +47,15 @@ export async function parseRecipeFromUrl(db: DB, url: string): Promise<ParsedRec
 }
 
 export async function parseRecipePdf(db: DB, filePath: string): Promise<ParsedRecipe | null> {
-  const base64 = readFileSync(filePath).toString('base64');
+  const base64 = readUpload(filePath).toString('base64');
   return runTask(db, TASK, { content: [documentBlock(base64), { type: 'text', text: 'Extract this recipe.' }] });
 }
 
 // crude but effective: drop scripts/styles, collapse tags to spaces, decode a few entities.
 function htmlToText(html: string): string {
   return html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script\b[^>]*>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style\b[^>]*>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')

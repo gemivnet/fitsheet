@@ -1,7 +1,7 @@
 // parseFoodPhoto.ts — read a photo of her food notes (handwritten or typed) into individual foods.
 // Same output shape as parseFood, so the app reuses the confirm-and-log UI.
 
-import { readFileSync } from 'node:fs';
+import { readUpload } from '../uploadPath';
 import type { DB } from '../db/index';
 import { imageBlock } from './client';
 import { runTask } from './task';
@@ -24,7 +24,7 @@ const TASK = {
 };
 
 export async function parseFoodPhoto(db: DB, filePath: string, mediaType: string, slot?: string): Promise<ParsedFood[]> {
-  const base64 = readFileSync(filePath).toString('base64');
+  const base64 = readUpload(filePath).toString('base64');
   const recent = slot ? recentSlotFoods(db, slot) : '';
   const hint = recent ? ` Lately at ${slot} she's logged: ${recent}. If something in the photo plausibly matches one of these, use that exact item and its brand.` : '';
   const out = await runTask(

@@ -11,7 +11,7 @@ export function foodsRouter(db: DB): Router {
   const r = Router();
 
   r.get('/', (req, res) => {
-    const q = (req.query.q as string | undefined)?.trim();
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : undefined;
     const restaurant = titleCase(String(req.query.restaurant ?? ''));
     if (q) {
       res.json(db.prepare('SELECT * FROM foods WHERE name LIKE ? ORDER BY is_favorite DESC, updated_at DESC LIMIT 100').all(`%${q}%`));
@@ -37,8 +37,8 @@ export function foodsRouter(db: DB): Router {
   // recency, the current meal slot ("breakfast foods"), favorites, and — the clever bit —
   // what she usually logs *after* the food she just logged today (grits → brown sugar).
   r.get('/suggestions', (req, res) => {
-    const slot = (req.query.slot as string | undefined) ?? '';
-    const date = (req.query.date as string | undefined) ?? '';
+    const slot = typeof req.query.slot === 'string' ? req.query.slot : '';
+    const date = typeof req.query.date === 'string' ? req.query.date : '';
 
     const all = db.prepare('SELECT * FROM foods ORDER BY updated_at DESC LIMIT 200').all() as Record<string, any>[];
     // What's already in this meal today drops out, so the list re-ranks to "what comes next".
