@@ -1,7 +1,7 @@
 // extractLabel.ts — Claude vision reads a nutrition-label photo into structured nutrition.
 // Gated by ANTHROPIC_API_KEY (route returns 503 if absent). Manual entry is the fallback.
 
-import { readFileSync } from 'node:fs';
+import { readUpload } from '../uploadPath';
 import type { DB } from '../db/index';
 import { imageBlock } from './client';
 import { runTask } from './task';
@@ -27,6 +27,6 @@ const TASK = {
 };
 
 export async function extractLabel(db: DB, filePath: string, mediaType: string): Promise<ExtractedNutrition | null> {
-  const base64 = readFileSync(filePath).toString('base64');
+  const base64 = readUpload(filePath).toString('base64');
   return runTask(db, TASK, { content: [imageBlock(base64, mediaType), { type: 'text', text: 'Extract the nutrition facts from this label.' }] });
 }
